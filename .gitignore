@@ -99,3 +99,13 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# large saved files
+*.pkl
+
+# large tensorflow model files
+checkpoint
+*.ckpt.*
+
+# pycharm settings
+.idea/
