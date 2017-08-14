@@ -71,128 +71,144 @@ def save_generator_output(G, fixed_z, img_str, title):
     plt.close(fig)
 
 '''
-Parameters
+Build
 '''
-x_size = 28 * 28
-z_size = 100
-n_hidden = 128
-# n_classes = 10
-epochs = 30
-batch_size = 128
-learning_rate = 0.002
-alpha = 0.2
-beta1 = 0.5
-print_every = 50
+class GAN:
+    def __init__(self, x_size, z_size, learning_rate):
 
-# data_loader normalize [0, 1] ==> [-1, 1]
-transform = torchvision.transforms.Compose([
-    torchvision.transforms.ToTensor(),
-    torchvision.transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-])
-train_loader = torch.utils.data.DataLoader(
-    torchvision.datasets.MNIST('../Data_sets/MNIST_data', train=True, download=True, transform=transform),
-    batch_size=batch_size, shuffle=True)
+        self.x_size, self.z_size = x_size, z_size
 
-# build network
-G = Generator(z_size, n_hidden=n_hidden, n_output=x_size, alpha=alpha)
-D = Discriminator(x_size, n_hidden=n_hidden, n_output=1, alpha=alpha)
-G.cuda()
-D.cuda()
+        # build network
+        self.G = Generator(z_size, n_output=x_size)
+        self.D = Discriminator(x_size, n_output=1)
+        self.G.cuda()
+        self.D.cuda()
 
-# optimizer
-BCE_loss = torch.nn.BCELoss()
-G_opt = torch.optim.Adam( G.parameters(), lr=learning_rate, betas=[beta1, 0.999] )
-D_opt = torch.optim.Adam( D.parameters(), lr=learning_rate, betas=[beta1, 0.999] )
-
-assets_dir = './assets/'
-if not os.path.isdir(assets_dir):
-    os.mkdir(assets_dir)
+        # optimizer
+        beta1 = 0.5
+        self.BCE_loss = torch.nn.BCELoss()
+        self.G_opt = torch.optim.Adam(self.G.parameters(), lr=learning_rate, betas=[beta1, 0.999])
+        self.D_opt = torch.optim.Adam(self.D.parameters(), lr=learning_rate, betas=[beta1, 0.999])
 
 '''
 Start training
 '''
-step = 0
-samples = []
-losses = []
-fixed_z = torch.Tensor(25, z_size).uniform_(-1, 1)
-start_time = time.time()
-for e in range(epochs):
-    for x_, _ in train_loader:
-        step += 1
-        '''
-        Train in Discriminator
-        '''
-        # reshape input image
-        x_ = x_.view(-1, x_size)
-        current_batch_size = x_.size()[0]
+def train(net, epochs, batch_size, data_loc, print_every=30):
+    # data_loader normalize [0, 1] ==> [-1, 1]
+    transform = torchvision.transforms.Compose([
+        torchvision.transforms.ToTensor(),
+        torchvision.transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+    ])
+    train_loader = torch.utils.data.DataLoader(
+        torchvision.datasets.MNIST(data_loc, train=True, download=True, transform=transform),
+        batch_size=batch_size, shuffle=True)
 
-        # create labels for loss computation
-        y_real_ = torch.ones(current_batch_size)
-        y_fake_ = torch.zeros(current_batch_size)
+    step = 0
+    losses = []
+    fixed_z = torch.Tensor(25, net.z_size).uniform_(-1, 1)
+    for e in range(epochs):
+        for x_, _ in train_loader:
+            step += 1
+            '''
+            Train in Discriminator
+            '''
+            # reshape input image
+            x_ = x_.view(-1, net.x_size)
+            current_batch_size = x_.size()[0]
 
-        # make it cuda Tensor
-        x_, y_real_, y_fake_ = Variable(x_.cuda()), Variable(y_real_.cuda()), Variable(y_fake_.cuda())
+            # create labels for loss computation
+            y_real_ = torch.ones(current_batch_size)
+            y_fake_ = torch.zeros(current_batch_size)
 
-        # run real input on Discriminator
-        D_result_real = D(x_)
-        D_loss_real = BCE_loss(D_result_real, y_real_)
+            # make it cuda Tensor
+            x_, y_real_, y_fake_ = Variable(x_.cuda()), Variable(y_real_.cuda()), Variable(y_fake_.cuda())
 
-        # run Generator input on Discriminator
-        z1_ = torch.Tensor(current_batch_size, z_size).uniform_(-1, 1)
-        z1_ = Variable(z1_.cuda())
-        x_fake = G(z1_)
-        D_result_fake = D(x_fake)
-        D_loss_fake = BCE_loss(D_result_fake, y_fake_)
+            # run real input on Discriminator
+            D_result_real = net.D(x_)
+            D_loss_real = net.BCE_loss(D_result_real, y_real_)
 
-        D_loss = D_loss_real + D_loss_fake
+            # run Generator input on Discriminator
+            z1_ = torch.Tensor(current_batch_size, net.z_size).uniform_(-1, 1)
+            z1_ = Variable(z1_.cuda())
+            x_fake = net.G(z1_)
+            D_result_fake = net.D(x_fake)
+            D_loss_fake = net.BCE_loss(D_result_fake, y_fake_)
 
-        # optimize Discriminator
-        D.zero_grad()
-        D_loss.backward()
-        D_opt.step()
-        
-        '''
-        Train in Generator
-        '''
-        z2_ = torch.Tensor(current_batch_size, z_size).uniform_(-1, 1)
-        y_ = torch.ones(current_batch_size)
-        z2_, y_ = Variable(z2_.cuda()), Variable(y_.cuda())
-        G_result = G(z2_)
-        D_result_fake2 = D(G_result)
-        G_loss = BCE_loss(D_result_fake2, y_)
+            D_loss = D_loss_real + D_loss_fake
 
-        G.zero_grad()
-        G_loss.backward()
-        G_opt.step()
+            # optimize Discriminator
+            net.D.zero_grad()
+            D_loss.backward()
+            net.D_opt.step()
 
-        if step % print_every == 0:
-            losses.append((D_loss.data[0], G_loss.data[0]))
+            '''
+            Train in Generator
+            '''
+            z2_ = torch.Tensor(current_batch_size, net.z_size).uniform_(-1, 1)
+            y_ = torch.ones(current_batch_size)
+            z2_, y_ = Variable(z2_.cuda()), Variable(y_.cuda())
+            G_result = net.G(z2_)
+            D_result_fake2 = net.D(G_result)
+            G_loss = net.BCE_loss(D_result_fake2, y_)
 
-            print("Epoch {}/{}...".format(e+1, epochs),
-                "Discriminator Loss: {:.4f}...".format(D_loss.data[0]),
-                "Generator Loss: {:.4f}".format(G_loss.data[0])) 
-    
-    # Sample from generator as we're training for viewing afterwards
-    image_fn = './assets/epoch_{:d}_pytorch.png'.format(e)
-    image_title = 'epoch {:d}'.format(e)
-    save_generator_output(G, fixed_z, image_fn, image_title)
+            net.G.zero_grad()
+            G_loss.backward()
+            net.G_opt.step()
 
-end_time = time.time()
-total_time = end_time - start_time
-print('Elapsed time: ', total_time)
-# 30 epochs: 183.71
+            if step % print_every == 0:
+                losses.append((D_loss.data[0], G_loss.data[0]))
 
-fig, ax = plt.subplots()
-losses = np.array(losses)
-plt.plot(losses.T[0], label='Discriminator', alpha=0.5)
-plt.plot(losses.T[1], label='Generator', alpha=0.5)
-plt.title("Training Losses")
-plt.legend()
-plt.savefig('./assets/losses_pytorch.png')
+                print("Epoch {}/{}...".format(e + 1, epochs),
+                      "Discriminator Loss: {:.4f}...".format(D_loss.data[0]),
+                      "Generator Loss: {:.4f}".format(G_loss.data[0]))
 
-# create animated gif from result images
-images = []
-for e in range(epochs):
-    image_fn = './assets/epoch_{:d}_pytorch.png'.format(e)
-    images.append( imageio.imread(image_fn) )
-imageio.mimsave('./assets/by_epochs_pytorch.gif', images, fps=3)
+                # Sample from generator as we're training for viewing afterwards
+        image_fn = './assets/epoch_{:d}_pytorch.png'.format(e)
+        image_title = 'epoch {:d}'.format(e)
+        save_generator_output(net.G, fixed_z, image_fn, image_title)
+
+    return losses
+
+def main():
+    assets_dir = './assets/'
+    if not os.path.isdir(assets_dir):
+        os.mkdir(assets_dir)
+
+    '''
+    Parameters
+    '''
+    x_size = 28 * 28
+    z_size = 100
+    epochs = 30
+    batch_size = 128
+    learning_rate = 0.002
+    data_loc = '../data_set/MNIST_data'
+
+    # build network
+    gan_net = GAN(x_size, z_size, learning_rate)
+
+    # training
+    start_time = time.time()
+    losses = train(gan_net, epochs, batch_size, data_loc)
+    end_time = time.time()
+    total_time = end_time - start_time
+    print('Elapsed time: ', total_time)
+    # 30 epochs: 183.71
+
+    fig, ax = plt.subplots()
+    losses = np.array(losses)
+    plt.plot(losses.T[0], label='Discriminator', alpha=0.5)
+    plt.plot(losses.T[1], label='Generator', alpha=0.5)
+    plt.title("Training Losses")
+    plt.legend()
+    plt.savefig('./assets/losses_pytorch.png')
+
+    # create animated gif from result images
+    images = []
+    for e in range(epochs):
+        image_fn = './assets/epoch_{:d}_pytorch.png'.format(e)
+        images.append(imageio.imread(image_fn))
+    imageio.mimsave('./assets/by_epochs_pytorch.gif', images, fps=3)
+
+if __name__ == '__main__':
+    main()

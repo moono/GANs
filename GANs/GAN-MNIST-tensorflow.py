@@ -7,7 +7,7 @@ import imageio
 
 # get data sets
 from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets('../Data_sets/MNIST_data')
+mnist = input_data.read_data_sets('../data_set/MNIST_data')
 
 # our place holders
 def model_inputs(real_dim, z_dim):
@@ -16,7 +16,7 @@ def model_inputs(real_dim, z_dim):
     
     return inputs_real, inputs_z
 
-# gennrator network structure
+# generator network structure
 def generator(z, out_dim, n_units=128, reuse=False,  alpha=0.2):
     with tf.variable_scope('generator', reuse=reuse):
         w_init = tf.contrib.layers.xavier_initializer()
