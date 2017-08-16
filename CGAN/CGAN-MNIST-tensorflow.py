@@ -8,7 +8,7 @@ import imageio
 
 # get data sets
 from tensorflow.examples.tutorials.mnist import input_data
-mnist = input_data.read_data_sets('../Data_sets/MNIST_data', one_hot=True)
+mnist = input_data.read_data_sets('../../data_set/MNIST_data', one_hot=True)
 
 # our place holders
 def model_inputs(x_dim, y_dim, z_dim):
