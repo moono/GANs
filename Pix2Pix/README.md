@@ -8,22 +8,40 @@
 
 ## Current Results
 
-* facades
-  * epochs: 200
-  * batch size: 1
-  * learning rate: 0.0002
-  * training time: 2h 32m (GTX 1080 Ti - Ubuntu)
-  * image manipulation
-    * random flip
-    * resize jitter + random crop
+* cityscapes
 
 | Generator output - Generator input - Ground truth |
 | --- | 
-|![](./results/test_result0_tf.png) |
-|![](./results/test_result3_tf.png) |
-|![](./results/test_result7_tf.png) |
-|![](./results/test_result9_tf.png) |
-|![](./results/test_result36_tf.png) |
-|![](./results/test_result41_tf.png) |
+|![](./results/cityscapes-tf-result-00.png) |
+|![](./results/cityscapes-tf-result-01.png) |
+|![](./results/cityscapes-tf-result-02.png) |
+|![](./results/cityscapes-tf-result-03.png) |
+
+* edges2shoes
+
+| Generator output - Generator input - Ground truth |
+| --- | 
+|![](./results/edges2shoes-tf-result-00.png) |
+|![](./results/edges2shoes-tf-result-01.png) |
+|![](./results/edges2shoes-tf-result-02.png) |
+|![](./results/edges2shoes-tf-result-03.png) |
+
+* facades
+
+| Generator output - Generator input - Ground truth |
+| --- | 
+|![](./results/facades-tf-result-00.png) |
+|![](./results/facades-tf-result-01.png) |
+|![](./results/facades-tf-result-02.png) |
+|![](./results/facades-tf-result-03.png) |
+
+* maps
+
+| Generator output - Generator input - Ground truth |
+| --- | 
+|![](./results/maps-tf-result-00.png) |
+|![](./results/maps-tf-result-01.png) |
+|![](./results/maps-tf-result-02.png) |
+|![](./results/maps-tf-result-03.png) |
  
 
