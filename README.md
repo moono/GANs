@@ -25,6 +25,34 @@ pip install --ignore-installed --upgrade https://storage.googleapis.com/tensorfl
 conda install pytorch torchvision cuda80 -c soumith
 ```
 
+## Downloading data-sets
+
+* MNIST
+```python
+# tensorflow
+from tensorflow.examples.tutorials.mnist import input_data
+mnist = input_data.read_data_sets('data_set/MNIST_data', one_hot=True)
+
+# pytorch
+import torch.utils.data
+import torchvision
+
+# data_loader normalize [0, 1] ==> [-1, 1]
+transform = torchvision.transforms.Compose(
+    [torchvision.transforms.ToTensor(),
+     torchvision.transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)) ])
+train_loader = torch.utils.data.DataLoader(
+    torchvision.datasets.MNIST('data_set/MNIST_data', train=True, download=True, transform=transform),
+    batch_size=128, shuffle=True)
+```
+
+* CelebA
+  * https://drive.google.com/drive/folders/0B7EVK8r0v71pWEZsZE9oNnFzTm8
+* Pix2Pix
+  * refer to: https://github.com/affinelayer/pix2pix-tensorflow
+* DualGAN
+  * refer to: https://github.com/duxingren14/DualGAN
+ 
 ## Acknowledgments
 
 * 
