@@ -9,6 +9,7 @@ import numpy as np
 import os
 import time
 import imageio
+from sklearn.preprocessing import LabelBinarizer
 
 
 # initialize weight with xavier
@@ -19,7 +20,7 @@ def weight_init(m):
 
 # define Generator
 class Generator(torch.nn.Module):
-    def __init__(self, z_size, y_size, n_hidden=128, n_out=728, alpha=0.2):
+    def __init__(self, z_size, y_size, n_hidden=128, n_out=784, alpha=0.2):
         super().__init__()
         self.alpha = alpha
 
@@ -33,7 +34,7 @@ class Generator(torch.nn.Module):
             weight_init(m)
 
     def forward(self, z, y):
-        concated = torch.cat([z, y], 1)
+        concated = torch.cat((z, y), 1)
         l1 = self.fc1(concated)
         l1 = torch_func.leaky_relu(l1, negative_slope=self.alpha)
 
@@ -58,7 +59,7 @@ class Discriminator(torch.nn.Module):
             weight_init(m)
 
     def forward(self, x, y):
-        concated = torch.cat([x, y], 1)
+        concated = torch.cat((x, y), 1)
         l1 = self.fc1(concated)
         l1 = torch_func.leaky_relu(l1, negative_slope=self.alpha)
 
@@ -72,8 +73,8 @@ class CGAN(object):
         self.x_size, self.y_size, self.z_size = x_size, y_size, z_size
 
         # create CGAN network
-        self.G = Generator(z_size, y_size).cuda()
-        self.D = Discriminator(x_size, y_size).cuda()
+        self.G = Generator(z_size, y_size, n_out=x_size).cuda()
+        self.D = Discriminator(x_size, y_size, n_out=1).cuda()
 
         # optimizer
         beta1 = 0.5
@@ -83,20 +84,20 @@ class CGAN(object):
 
 
 # image save function
-def save_generator_output(G, fixed_z, img_str, title):
-    n_images = fixed_z.size()[0]
-    n_rows = np.sqrt(n_images).astype(np.int32)
-    n_cols = np.sqrt(n_images).astype(np.int32)
-
-    z_ = Variable(fixed_z.cuda())
-    samples = G(z_)
-    samples = samples.cpu().data.numpy()
+def save_generator_output(G, fixed_z, fixed_y, img_str, title):
+    n_rows = fixed_y.shape[0]
+    n_cols = fixed_y.shape[1]
 
     fig, axes = plt.subplots(nrows=n_rows, ncols=n_cols, figsize=(5, 5), sharey=True, sharex=True)
-    for ax, img in zip(axes.flatten(), samples):
-        ax.axis('off')
-        ax.set_adjustable('box-forced')
-        ax.imshow(img.reshape((28, 28)), cmap='Greys_r', aspect='equal')
+    for ax_row, y_ in zip(axes, fixed_y):
+        y_ = torch.from_numpy(y_)
+        z_, y_ = Variable(fixed_z.cuda()), Variable(y_.cuda())
+        samples = G(z_, y_)
+        samples = samples.cpu().data.numpy()
+        for ax, img in zip(ax_row, samples):
+            ax.axis('off')
+            ax.set_adjustable('box-forced')
+            ax.imshow(img.reshape((28, 28)), cmap='Greys_r', aspect='equal')
     plt.subplots_adjust(wspace=0, hspace=0)
     plt.suptitle(title)
     plt.savefig(img_str)
@@ -111,58 +112,71 @@ def train(net, data_loc, batch_size, epochs, print_every=30):
         torchvision.datasets.MNIST(data_loc, train=True, download=True, transform=transform),
         batch_size=batch_size, shuffle=True)
 
+    # prepare label binarizer too
+    lb = LabelBinarizer()
+    lb.fit(np.arange(0,10))
+
+    # training variables
     step = 0
     losses = []
-    fixed_z = torch.Tensor(25, net.z_size).uniform_(-1, 1).cuda()
+    fixed_z = torch.Tensor(10, net.z_size).uniform_(-1, 1).cuda()
+    fixed_y = np.zeros(shape=[net.y_size, 10, net.y_size]).astype(np.float32)
+    for c in range(net.y_size):
+        fixed_y[c, :, c] = 1.0
+    # fixed_y = torch.from_numpy(fixed_y)
 
     for e in range(epochs):
-        for x_, _ in train_loader:
+        for x_, y_ in train_loader:
             step += 1
             '''
-            Train in Discriminator
+            Train Discriminator
             '''
             # reshape input image
             x_ = x_.view(-1, net.x_size)
             current_batch_size = x_.size()[0]
+
+            # onehot encode label
+            y_onehot = lb.transform(y_.numpy()).astype(np.float32)
+            y_ = torch.from_numpy(y_onehot)
 
             # create labels for loss computation
             y_real_ = torch.ones(current_batch_size)
             y_fake_ = torch.zeros(current_batch_size)
 
             # make it cuda Tensor
-            x_, y_real_, y_fake_ = Variable(x_.cuda()), Variable(y_real_.cuda()), Variable(y_fake_.cuda())
+            x_, y_, y_real_, y_fake_ = Variable(x_.cuda()), Variable(y_.cuda()), Variable(y_real_.cuda()), Variable(y_fake_.cuda())
 
             # run real input on Discriminator
-            D_result_real = net.D(x_)
-            D_loss_real = net.BCE_loss(D_result_real, y_real_)
+            D_result_real = net.D(x_, y_)
+            D_loss_real = net.bce_loss(D_result_real, y_real_)
 
             # run Generator input on Discriminator
             z1_ = torch.Tensor(current_batch_size, net.z_size).uniform_(-1, 1)
             z1_ = Variable(z1_.cuda())
-            x_fake = net.G(z1_)
-            D_result_fake = net.D(x_fake)
-            D_loss_fake = net.BCE_loss(D_result_fake, y_fake_)
+            x_fake = net.G(z1_, y_)
+            D_result_fake = net.D(x_fake, y_)
+            D_loss_fake = net.bce_loss(D_result_fake, y_fake_)
 
             D_loss = D_loss_real + D_loss_fake
 
             # optimize Discriminator
             net.D.zero_grad()
             D_loss.backward()
-            net.D_opt.step()
+            net.opt_d.step()
 
             '''
-            Train in Generator
+            Train Generator
             '''
             z2_ = torch.Tensor(current_batch_size, net.z_size).uniform_(-1, 1)
-            y_ = torch.ones(current_batch_size)
-            z2_, y_ = Variable(z2_.cuda()), Variable(y_.cuda())
-            G_result = net.G(z2_)
-            D_result_fake2 = net.D(G_result)
-            G_loss = net.BCE_loss(D_result_fake2, y_)
+            # y_ = torch.ones(current_batch_size)
+            z2_ = Variable(z2_.cuda())
+            G_result = net.G(z2_, y_)
+            D_result_fake2 = net.D(G_result, y_)
+            G_loss = net.bce_loss(D_result_fake2, y_real_)
 
             net.G.zero_grad()
             G_loss.backward()
-            net.G_opt.step()
+            net.opt_g.step()
 
             if step % print_every == 0:
                 losses.append((D_loss.data[0], G_loss.data[0]))
@@ -174,7 +188,7 @@ def train(net, data_loc, batch_size, epochs, print_every=30):
                 # Sample from generator as we're training for viewing afterwards
         image_fn = './assets/epoch_{:d}_pytorch.png'.format(e)
         image_title = 'epoch {:d}'.format(e)
-        save_generator_output(net.G, fixed_z, image_fn, image_title)
+        save_generator_output(net.G, fixed_z, fixed_y, image_fn, image_title)
 
     return losses
 

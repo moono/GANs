@@ -11,28 +11,16 @@ http://wiseodd.github.io/techblog/2016/12/24/conditional-gan-tensorflow/
 
 ### Training Losses
 
-| tensorflow |
-| --- |
-| ![](./assets/losses_tf.png) |
-
-### Generated samples via epochs
-
-| epochs | tensorflow |
+| tensorflow | pytorch |
 | --- | --- |
-| 0 | ![](./assets/epoch_0_tf.png) |
-| 9 | ![](./assets/epoch_9_tf.png) |
-| 19 | ![](./assets/epoch_19_tf.png) |
-| 29 | ![](./assets/epoch_29_tf.png) |
-|  | ![](./assets/by_epochs_tf.gif) |
+| ![](./assets/losses_tf.png) | ![](./assets/losses_pytorch.png) |
 
-### Generated results by epochs - fixed classes
+### Generated samples via epochs - note for fixed class
 
-| tensorflow |
-| --- |
-| ![](./assets/cGAN-MNIST-result-by-epoch.PNG) |
-
-### Generated results by epochs - fixed classes & fixed z
-
-| tensorflow |
-| --- |
-| ![](./assets/cGAN-MNIST-result-by-style.PNG) |
+| epochs | tensorflow | pytorch |
+| --- | --- | --- |
+| 0 | ![](./assets/epoch_0_tf.png) | ![](./assets/epoch_0_pytorch.png) |
+| 9 | ![](./assets/epoch_9_tf.png) | ![](./assets/epoch_9_pytorch.png) |
+| 19 | ![](./assets/epoch_19_tf.png) | ![](./assets/epoch_19_pytorch.png) |
+| 29 | ![](./assets/epoch_29_tf.png) | ![](./assets/epoch_29_pytorch.png) |
+|  | ![](./assets/by_epochs_tf.gif) | ![](./assets/by_epochs_pytorch.gif) |
