@@ -3,9 +3,13 @@ import numpy as np
 import os
 import time
 
+import helper
+
 
 class DualGAN(object):
     def __init__(self, im_size, im_channel_u, im_channel_v):
+        tf.reset_default_graph()
+
         #
         self.im_size, self.channel_u, self.channel_v = im_size, im_channel_u, im_channel_v
 
@@ -207,12 +211,108 @@ class DualGAN(object):
 
             return out, logits
 
+def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
+    losses = []
+    steps = 0
 
+    # for testing
+    test_image_u, test_image_v = data_loader.get_image_by_index(0)
+
+    # prepare saver for saving trained model
+    saver = tf.train.Saver()
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        for e in range(epochs):
+            for ii in range(data_loader.n_images // batch_size):
+                steps += 1
+
+                batch_image_u, batch_image_v = data_loader.get_next_batch(batch_size)
+
+
+                fd = {
+                    net.input_u: batch_image_u,
+                    net.input_v: batch_image_v
+                }
+                d_opt_out = sess.run(net.d_train_opt, feed_dict=fd)
+                g_opt_out = sess.run(net.g_train_opt, feed_dict=fd)
+
+                if steps % print_every == 0:
+                    # At the end of each epoch, get the losses and print them out
+                    train_loss_d = net.d_loss.eval(fd)
+                    train_loss_g = net.g_loss.eval(fd)
+
+                    print("Epoch {}/{}...".format(e + 1, epochs),
+                          "Discriminator Loss: {:.4f}...".format(train_loss_d),
+                          "Generator Loss: {:.4f}".format(train_loss_g))
+                    # Save losses to view after training
+                    losses.append((train_loss_d, train_loss_g))
+
+            # save generated images on every epochs
+            g_image_u_to_v = sess.run(net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=False),
+                                      feed_dict={net.input_u: test_image_u})
+            g_image_u_to_v_to_u = sess.run(net.generator('v-to-u', g_image_u_to_v, out_channel=net.channel_u, reuse=True, is_training=False),
+                                           feed_dict={net.input_u: test_image_u})
+
+            g_image_v_to_u = sess.run(net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=False),
+                                      feed_dict={net.input_v: test_image_v})
+            g_image_v_to_u_to_v = sess.run(net.generator('u-to-v', g_image_v_to_u, out_channel=net.channel_v, reuse=True, is_training=False),
+                                           feed_dict={net.input_v: test_image_v})
+
+            image_fn = './assets/epoch_{:d}_tf.png'.format(e)
+            helper.save_result(image_fn,
+                               test_image_u, g_image_u_to_v, g_image_u_to_v_to_u,
+                               test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
+
+        ckpt_fn = './checkpoints/DualGAN-{}.ckpt'.format(dataset_name)
+        saver.save(sess, ckpt_fn)
+
+    return losses
 
 def main():
-    dataset_dir_u = ''
-    dataset_dir_v = ''
-    net = DualGAN(im_size=256, im_channel_u=3, im_channel_v=3)
+    assets_dir = './assets/'
+    ckpt_dir = './checkpoints/'
+    if not os.path.isdir(assets_dir):
+        os.mkdir(assets_dir)
+
+    if not os.path.isdir(ckpt_dir):
+        os.mkdir(ckpt_dir)
+
+    parameter_set = [
+        {
+            'file_extension': 'jpg',
+            'dataset_name': 'sketch-photo',
+            'train_dataset_dir_u': '../data_set/sketch-photo/train/A',
+            'train_dataset_dir_v': '../data_set/sketch-photo/train/B',
+            'val_dataset_dir_u': '../data_set/sketch-photo/val/A',
+            'val_dataset_dir_v': '../data_set/sketch-photo/val/B',
+            'epochs': 45,
+            'batch_size': 1,
+            'im_size': 256,
+            'im_channel': 1,
+            'do_flip': True
+        }
+    ]
+
+    for train_val_param in parameter_set:
+        fn_ext = train_val_param['file_extension']
+        dataset_name = train_val_param['dataset_name']
+        train_dir_u = train_val_param['train_dataset_dir_u']
+        train_dir_v = train_val_param['train_dataset_dir_v']
+        val_dir_u = train_val_param['val_dataset_dir_u']
+        val_dir_v = train_val_param['val_dataset_dir_v']
+        epochs = train_val_param['epochs']
+        batch_size = train_val_param['batch_size']
+        im_size = train_val_param['im_size']
+        im_channel = train_val_param['im_channel']
+        do_flip = train_val_param['do_flip']
+
+        # input_dir_u, input_dir_v, fn_ext, im_size, do_flip)
+        train_data_loader = helper.Dataset(train_dir_u, train_dir_v, fn_ext, im_size, im_channel, im_channel, do_flip=do_flip)
+        val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext, im_size, im_channel, im_channel, do_flip=False)
+        net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
+
+        train(net, dataset_name, train_data_loader, epochs, batch_size)
 
     print('all done?')
 
