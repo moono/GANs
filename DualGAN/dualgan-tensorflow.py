@@ -2,6 +2,7 @@ import tensorflow as tf
 # import numpy as np
 import os
 import time
+import json
 
 import helper
 
@@ -310,21 +311,8 @@ def main():
         os.mkdir(ckpt_dir)
 
     # parameters to run
-    parameter_set = [
-        {
-            'file_extension': 'jpg',
-            'dataset_name': 'sketch-photo',
-            'train_dataset_dir_u': '../data_set/sketch-photo/train/A',
-            'train_dataset_dir_v': '../data_set/sketch-photo/train/B',
-            'val_dataset_dir_u': '../data_set/sketch-photo/val/A',
-            'val_dataset_dir_v': '../data_set/sketch-photo/val/B',
-            'epochs': 45,
-            'batch_size': 1,
-            'im_size': 256,
-            'im_channel': 1,
-            'do_flip': True
-        }
-    ]
+    with open('./training_parameters.json') as json_data:
+        parameter_set = json.load(json_data)
 
     # start working!!
     for train_val_param in parameter_set:
@@ -341,8 +329,10 @@ def main():
         do_flip = train_val_param['do_flip']
 
         # load train & validation datasets
-        train_data_loader = helper.Dataset(train_dir_u, train_dir_v, fn_ext, im_size, im_channel, im_channel, do_flip=do_flip)
-        val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext, im_size, im_channel, im_channel, do_flip=False)
+        train_data_loader = helper.Dataset(train_dir_u, train_dir_v, fn_ext,
+                                           im_size, im_channel, im_channel, do_flip=do_flip, do_shuffle=True)
+        val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext,
+                                         im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
 
         # prepare network
         net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
@@ -352,8 +342,12 @@ def main():
         train(net, dataset_name, train_data_loader, epochs, batch_size)
         end_time = time.time()
         total_time = end_time - start_time
-        print('[Training result]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}'.
-              format(dataset_name, epochs, batch_size, total_time))
+        test_result_str ='[Training result]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}'.format(
+            dataset_name, epochs, batch_size, total_time)
+        print(test_result_str)
+
+        with open('./assets/test_summary.txt', 'a') as f:
+            f.write(test_result_str)
 
         # validation
         test(net, dataset_name, val_data_loader)

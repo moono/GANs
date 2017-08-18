@@ -38,7 +38,7 @@ def save_result(image_fn,
 
 # class for loading images
 class Dataset(object):
-    def __init__(self, input_dir_u, input_dir_v, fn_ext, im_size, im_channel_u, im_channel_v, do_flip):
+    def __init__(self, input_dir_u, input_dir_v, fn_ext, im_size, im_channel_u, im_channel_v, do_flip, do_shuffle):
         if not os.path.exists(input_dir_u) or not os.path.exists(input_dir_v):
             raise Exception('input directory does not exists!!')
 
@@ -49,8 +49,9 @@ class Dataset(object):
             raise Exception('input directory does not contain any images!!')
 
         # shuffle image files
-        np.random.shuffle(self.image_files_u)
-        np.random.shuffle(self.image_files_v)
+        if do_shuffle:
+            np.random.shuffle(self.image_files_u)
+            np.random.shuffle(self.image_files_v)
 
         self.n_images = len(self.image_files_u) if len(self.image_files_u) <= len(self.image_files_v) else len(self.image_files_v)
         self.batch_index = 0
