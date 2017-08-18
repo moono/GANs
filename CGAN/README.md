@@ -1,4 +1,4 @@
-# Conditional GAN on MNIST - tensorflow
+# Conditional GAN on MNIST - tensorflow & pytorch
 
 ## Reference
 http://wiseodd.github.io/techblog/2016/12/24/conditional-gan-tensorflow/
