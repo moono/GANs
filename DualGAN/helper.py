@@ -28,7 +28,13 @@ def save_result(image_fn,
     concat_row_1 = np.concatenate((im_3, im_4, im_5), axis=1)
     concated = np.concatenate((concat_row_0, concat_row_1), axis=0)
 
-    toimage(concated, mode='RGB').save(image_fn)
+    if concated.shape[2] == 1:
+        reshaped = np.squeeze(concated, axis=2)
+        toimage(reshaped, mode='L').save(image_fn)
+    else:
+        toimage(concated, mode='RGB').save(image_fn)
+
+
 
 # class for loading images
 class Dataset(object):
