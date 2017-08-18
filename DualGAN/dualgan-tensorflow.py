@@ -5,9 +5,9 @@ import time
 
 
 class DualGAN(object):
-    def __init__(self, im_height, im_width, im_channel):
+    def __init__(self, im_size, im_channel_u, im_channel_v):
         #
-        self.height, self.width, self.channel = im_height, im_width, im_channel
+        self.im_size, self.channel_u, self.channel_v = im_size, im_channel_u, im_channel_v
 
         self.n_g_filter_start = 64
         self.n_d_filter_start = 64
@@ -21,20 +21,20 @@ class DualGAN(object):
         self.learning_rate = 0.0005
 
         # Build model
-        self.input_u = tf.placeholder(tf.float32, [None, im_height, im_width, im_channel], name='input_u')
-        self.input_v = tf.placeholder(tf.float32, [None, im_height, im_width, im_channel], name='input_v')
+        self.input_u = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_u], name='input_u')
+        self.input_v = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_v], name='input_v')
 
-        # define loss
+        # define loss & optimizer
         self.d_loss, self.g_loss = self.model_loss(self.input_u, self.input_v)
         self.d_train_opt, self.g_train_opt = self.model_opt(self.d_loss, self.g_loss)
 
 
     def model_loss(self, input_u, input_v):
         # generators
-        generator_u_to_v = self.generator('u-to-v', input_u, reuse=False, is_training=True)
-        generator_v_to_u = self.generator('v-to-u', input_v, reuse=False, is_training=True)
-        generator_u_to_v_to_u = self.generator('v-to-u', generator_u_to_v, reuse=True, is_training=True)
-        generator_v_to_u_to_v = self.generator('u-to-v', generator_v_to_u, reuse=True, is_training=True)
+        generator_u_to_v = self.generator('u-to-v', input_u, out_channel=self.channel_v, reuse=False, is_training=True)
+        generator_v_to_u = self.generator('v-to-u', input_v, out_channel=self.channel_u, reuse=False, is_training=True)
+        generator_u_to_v_to_u = self.generator('v-to-u', generator_u_to_v, out_channel=self.channel_u, reuse=True, is_training=True)
+        generator_v_to_u_to_v = self.generator('u-to-v', generator_v_to_u, out_channel=self.channel_v, reuse=True, is_training=True)
 
         # discriminators
         discriminator_u_fake, discriminator_u_fake_logits = self.discriminator('u', generator_u_to_v,
@@ -97,7 +97,7 @@ class DualGAN(object):
 
         return d_train_opt, g_train_opt
 
-    def generator(self, scope_name, inputs, reuse=False, is_training=True):
+    def generator(self, scope_name, inputs, out_channel, reuse=False, is_training=True):
         variable_scope_name = 'generator_{:s}'.format(scope_name)
         with tf.variable_scope(variable_scope_name, reuse=reuse):
             w_init_encoder = tf.truncated_normal_initializer(stddev=self.stddev)
@@ -111,7 +111,7 @@ class DualGAN(object):
             #     d8 <- d7 <- d6 <- d5 <- d4 <- d3 <- d2 <- d1
             layers = []
 
-            # expected inputs shape: [batch size, 256, 256, 3]
+            # expected inputs shape: [batch size, 256, 256, input_channel]
 
             # encoders
             # make [batch size, 128, 128, 64]
@@ -165,8 +165,8 @@ class DualGAN(object):
 
             decoder7 = tf.nn.relu(layers[-1])
 
-            # make [batch size, 256, 256, 3]
-            decoder8 = tf.layers.conv2d_transpose(inputs=decoder7, filters=self.channel, kernel_size=5, strides=2,
+            # make [batch size, 256, 256, out_channel]
+            decoder8 = tf.layers.conv2d_transpose(inputs=decoder7, filters=out_channel, kernel_size=5, strides=2,
                                                  padding='same', kernel_initializer=w_init_decoder, use_bias=True)
             out = tf.tanh(decoder8)
             return out
@@ -176,9 +176,9 @@ class DualGAN(object):
         with tf.variable_scope(variable_scope_name, reuse=reuse):
             w_init = tf.truncated_normal_initializer(stddev=self.stddev)
 
-            # expected inputs shape: [batch size, 256, 256, 3]
+            # expected inputs shape: [batch size, 256, 256, input_channel]
 
-            # layer_1: [batch, 256, 256, 3] => [batch, 128, 128, 64], without batchnorm
+            # layer_1: [batch, 256, 256, input_channel] => [batch, 128, 128, 64], without batchnorm
             l1 = tf.layers.conv2d(inputs, filters=self.n_d_filter_start, kernel_size=5, strides=2, padding='same',
                                   kernel_initializer=w_init, use_bias=True)
             l1 = tf.maximum(self.alpha * l1, l1)
@@ -210,7 +210,11 @@ class DualGAN(object):
 
 
 def main():
-    print()
+    dataset_dir_u = ''
+    dataset_dir_v = ''
+    net = DualGAN(im_size=256, im_channel_u=3, im_channel_v=3)
+
+    print('all done?')
 
 if __name__ == '__main__':
     main()
