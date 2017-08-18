@@ -249,15 +249,19 @@ def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
                     losses.append((train_loss_d, train_loss_g))
 
             # save generated images on every epochs
-            g_image_u_to_v = sess.run(net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=False),
-                                      feed_dict={net.input_u: test_image_u})
-            g_image_u_to_v_to_u = sess.run(net.generator('v-to-u', g_image_u_to_v, out_channel=net.channel_u, reuse=True, is_training=False),
-                                           feed_dict={net.input_u: test_image_u})
+            g_image_u_to_v = sess.run(
+                net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=False),
+                feed_dict={net.input_u: test_image_u})
+            g_image_v_to_u = sess.run(
+                net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=False),
+                feed_dict={net.input_v: test_image_v})
 
-            g_image_v_to_u = sess.run(net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=False),
-                                      feed_dict={net.input_v: test_image_v})
-            g_image_v_to_u_to_v = sess.run(net.generator('u-to-v', g_image_v_to_u, out_channel=net.channel_v, reuse=True, is_training=False),
-                                           feed_dict={net.input_v: test_image_v})
+            g_image_u_to_v_to_u = sess.run(
+                net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=False),
+                feed_dict={net.input_u: g_image_u_to_v})
+            g_image_v_to_u_to_v = sess.run(
+                net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=False),
+                feed_dict={net.input_v: g_image_v_to_u})
 
             image_fn = './assets/epoch_{:d}_tf.png'.format(e)
             helper.save_result(image_fn,
