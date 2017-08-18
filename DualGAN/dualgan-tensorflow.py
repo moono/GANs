@@ -1,5 +1,5 @@
 import tensorflow as tf
-import numpy as np
+# import numpy as np
 import os
 import time
 
@@ -273,15 +273,43 @@ def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
 
     return losses
 
+def test(net, dataset_name, data_loader):
+    saver = tf.train.Saver()
+    with tf.Session() as sess:
+        saver.restore(sess, tf.train.latest_checkpoint('./checkpoints'))
+
+        for ii in range(data_loader.n_images):
+            test_image_u, test_image_v = data_loader.get_image_by_index(ii)
+
+            g_image_u_to_v = sess.run(
+                net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=False),
+                feed_dict={net.input_u: test_image_u})
+            g_image_v_to_u = sess.run(
+                net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=False),
+                feed_dict={net.input_v: test_image_v})
+
+            g_image_u_to_v_to_u = sess.run(
+                net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=False),
+                feed_dict={net.input_u: g_image_u_to_v})
+            g_image_v_to_u_to_v = sess.run(
+                net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=False),
+                feed_dict={net.input_v: g_image_v_to_u})
+
+            image_fn = './assets/{:s}_result_{:4d}_tf.png'.format(dataset_name, ii)
+            helper.save_result(image_fn,
+                               test_image_u, g_image_u_to_v, g_image_u_to_v_to_u,
+                               test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
+
 def main():
+    # prepare directories
     assets_dir = './assets/'
     ckpt_dir = './checkpoints/'
     if not os.path.isdir(assets_dir):
         os.mkdir(assets_dir)
-
     if not os.path.isdir(ckpt_dir):
         os.mkdir(ckpt_dir)
 
+    # parameters to run
     parameter_set = [
         {
             'file_extension': 'jpg',
@@ -298,6 +326,7 @@ def main():
         }
     ]
 
+    # start working!!
     for train_val_param in parameter_set:
         fn_ext = train_val_param['file_extension']
         dataset_name = train_val_param['dataset_name']
@@ -311,14 +340,23 @@ def main():
         im_channel = train_val_param['im_channel']
         do_flip = train_val_param['do_flip']
 
-        # input_dir_u, input_dir_v, fn_ext, im_size, do_flip)
+        # load train & validation datasets
         train_data_loader = helper.Dataset(train_dir_u, train_dir_v, fn_ext, im_size, im_channel, im_channel, do_flip=do_flip)
         val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext, im_size, im_channel, im_channel, do_flip=False)
+
+        # prepare network
         net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
 
+        # start training
+        start_time = time.time()
         train(net, dataset_name, train_data_loader, epochs, batch_size)
+        end_time = time.time()
+        total_time = end_time - start_time
+        print('[Training result]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}'.
+              format(dataset_name, epochs, batch_size, total_time))
 
-    print('all done?')
+        # validation
+        test(net, dataset_name, val_data_loader)
 
 if __name__ == '__main__':
     main()
