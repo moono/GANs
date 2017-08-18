@@ -17,6 +17,15 @@
 |![](./results/cityscapes-tf-result-02.png) |
 |![](./results/cityscapes-tf-result-03.png) |
 
+* edges2handbags
+
+| Generator output - Generator input - Ground truth |
+| --- | 
+|![](./results/edges2handbags-tf-result-00.png) |
+|![](./results/edges2handbags-tf-result-01.png) |
+|![](./results/edges2handbags-tf-result-02.png) |
+|![](./results/edges2handbags-tf-result-03.png) |
+
 * edges2shoes
 
 | Generator output - Generator input - Ground truth |
