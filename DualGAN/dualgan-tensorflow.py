@@ -342,7 +342,7 @@ def main():
         train(net, dataset_name, train_data_loader, epochs, batch_size)
         end_time = time.time()
         total_time = end_time - start_time
-        test_result_str ='[Training result]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}'.format(
+        test_result_str ='[Training result]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}\n'.format(
             dataset_name, epochs, batch_size, total_time)
         print(test_result_str)
 
