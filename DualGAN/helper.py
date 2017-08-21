@@ -49,7 +49,8 @@ class Dataset(object):
             raise Exception('input directory does not contain any images!!')
 
         # shuffle image files
-        if do_shuffle:
+        self.do_shuffle = do_shuffle
+        if self.do_shuffle:
             np.random.shuffle(self.image_files_u)
             np.random.shuffle(self.image_files_v)
 
@@ -61,6 +62,13 @@ class Dataset(object):
         self.do_flip = do_flip
         self.image_max_value = 255
         # self.prng = np.random.RandomState(777)
+
+    def reset(self):
+        self.batch_index = 0
+        # shuffle image files
+        if self.do_shuffle:
+            np.random.shuffle(self.image_files_u)
+            np.random.shuffle(self.image_files_v)
 
     def get_image_by_index(self, index):
         if index >= self.n_images:

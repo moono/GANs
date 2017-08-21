@@ -7,6 +7,17 @@ import json
 import helper
 
 
+# def batch_norm(x,  name="batch_norm"):
+#     eps = 1e-6
+#     with tf.variable_scope(name):
+#         nchannels = x.get_shape()[3]
+#         scale = tf.get_variable("scale", [nchannels], initializer=tf.random_normal_initializer(1.0, 0.02, dtype=tf.float32))
+#         center = tf.get_variable("center", [nchannels], initializer=tf.constant_initializer(0.0, dtype = tf.float32))
+#         ave, dev = tf.nn.moments(x, axes=[1,2], keep_dims=True)
+#         inv_dev = tf.rsqrt(dev + eps)
+#         normalized = (x-ave)*inv_dev * scale + center
+#         return normalized
+
 class DualGAN(object):
     def __init__(self, im_size, im_channel_u, im_channel_v):
         tf.reset_default_graph()
@@ -23,7 +34,7 @@ class DualGAN(object):
         self.beta1 = 0.5
         self.lambda_u = 20.0
         self.lambda_v = 20.0
-        self.learning_rate = 0.0005
+        self.learning_rate = 0.00005
 
         # Build model
         self.input_u = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_u], name='input_u')
@@ -36,53 +47,46 @@ class DualGAN(object):
 
     def model_loss(self, input_u, input_v):
         # generators
-        generator_u_to_v = self.generator('u-to-v', input_u, out_channel=self.channel_v, reuse=False, is_training=True)
-        generator_v_to_u = self.generator('v-to-u', input_v, out_channel=self.channel_u, reuse=False, is_training=True)
-        generator_u_to_v_to_u = self.generator('v-to-u', generator_u_to_v, out_channel=self.channel_u, reuse=True, is_training=True)
-        generator_v_to_u_to_v = self.generator('u-to-v', generator_v_to_u, out_channel=self.channel_v, reuse=True, is_training=True)
+        g_model_u_v = self.generator('u-to-v', input_u, out_channel=self.channel_v, reuse=False, is_training=True)
+        g_model_v_u = self.generator('v-to-u', input_v, out_channel=self.channel_u, reuse=False, is_training=True)
+        g_model_u_v_u = self.generator('v-to-u', g_model_u_v, out_channel=self.channel_u, reuse=True, is_training=True)
+        g_model_v_u_v = self.generator('u-to-v', g_model_v_u, out_channel=self.channel_v, reuse=True, is_training=True)
 
-        # discriminators
-        discriminator_u_fake, discriminator_u_fake_logits = self.discriminator('u', generator_u_to_v,
-                                                                               reuse=False, is_training=True)
-        discriminator_u_real, discriminator_u_real_logits = self.discriminator('u', input_v,
-                                                                               reuse=True, is_training=True)
-        discriminator_v_fake, discriminator_v_fake_logits = self.discriminator('v', generator_v_to_u,
-                                                                               reuse=False, is_training=True)
-        discriminator_v_real, discriminator_v_real_logits = self.discriminator('v', input_u,
-                                                                               reuse=True, is_training=True)
+        # compute L1 loss of G
+        g_loss_l1_u = tf.reduce_mean(tf.abs(g_model_u_v_u - input_u))
+        g_loss_l1_v = tf.reduce_mean(tf.abs(g_model_v_u_v - input_v))
 
-        # loss
-        # discriminator losses
+        # u related losses
+        d_model_u_fake_logits = self.discriminator('u', g_model_u_v, reuse=False, is_training=True)
+        d_model_u_real_logits = self.discriminator('u', input_v, reuse=True, is_training=True)
         d_loss_real_u = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_u_real_logits,
-                                                    labels=tf.ones_like(discriminator_u_real)))
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_real_logits,
+                                                    labels=tf.ones_like(d_model_u_real_logits)))
         d_loss_fake_u = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_u_fake_logits,
-                                                    labels=tf.zeros_like(discriminator_u_fake)))
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_fake_logits,
+                                                    labels=tf.zeros_like(d_model_u_fake_logits)))
         d_loss_u = d_loss_real_u + d_loss_fake_u
-
-        d_loss_real_v = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_v_real_logits,
-                                                    labels=tf.ones_like(discriminator_v_real)))
-        d_loss_fake_v = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_v_fake_logits,
-                                                    labels=tf.zeros_like(discriminator_v_fake)))
-        d_loss_v = d_loss_real_v + d_loss_fake_v
-        d_loss = d_loss_u + d_loss_v
-
-        # generator losses
-        g_loss_l1_u = tf.reduce_mean(tf.abs(generator_u_to_v_to_u - input_u))
-        g_loss_l1_v = tf.reduce_mean(tf.abs(generator_v_to_u_to_v - input_v))
-
         g_loss_gan_u = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_u_fake_logits,
-                                                    labels=tf.ones_like(discriminator_u_fake)))
-        g_loss_gan_v = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=discriminator_v_fake_logits,
-                                                    labels=tf.ones_like(discriminator_v_fake)))
-
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_fake_logits,
+                                                    labels=tf.ones_like(d_model_u_fake_logits)))
         g_loss_u = g_loss_gan_u + self.lambda_v * g_loss_l1_v
+
+        # v related losses
+        d_model_v_fake_logits = self.discriminator('v', g_model_v_u, reuse=False, is_training=True)
+        d_model_v_real_logits = self.discriminator('v', input_u, reuse=True, is_training=True)
+        d_loss_real_v = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_real_logits,
+                                                    labels=tf.ones_like(d_model_v_real_logits)))
+        d_loss_fake_v = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_fake_logits,
+                                                    labels=tf.zeros_like(d_model_v_fake_logits)))
+        d_loss_v = d_loss_real_v + d_loss_fake_v
+        g_loss_gan_v = tf.reduce_mean(
+            tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_fake_logits,
+                                                    labels=tf.ones_like(d_model_v_fake_logits)))
         g_loss_v = g_loss_gan_v + self.lambda_u * g_loss_l1_u
+
+        d_loss = d_loss_u + d_loss_v
         g_loss = g_loss_u + g_loss_v
 
         return d_loss, g_loss
@@ -134,7 +138,7 @@ class DualGAN(object):
                 self.n_g_filter_start * 8,  # encoder 8: [batch size, 2, 2, 512] => [batch size, 1, 1, 512]
             ]
 
-            for n_filters in encoder_spec:
+            for ii, n_filters in enumerate(encoder_spec):
                 prev_activated = tf.maximum(self.alpha * layers[-1], layers[-1])
                 encoder = tf.layers.conv2d(prev_activated, filters=n_filters, kernel_size=5, strides=2, padding='same',
                                            kernel_initializer=w_init_encoder, use_bias=True)
@@ -159,9 +163,10 @@ class DualGAN(object):
                                                      padding='same', kernel_initializer=w_init_decoder, use_bias=True)
                 decoder = tf.layers.batch_normalization(inputs=decoder, training=is_training)
 
-                # handle dropout
+                # handle dropout (use dropout at training & inference)
                 if dropout > 0.0:
-                    decoder = tf.layers.dropout(decoder, rate=dropout)
+                    # decoder = tf.layers.dropout(decoder, rate=dropout)
+                    decoder = tf.layers.dropout(decoder, rate=dropout, training=True)
 
                 # handle skip layer
                 skip_layer_index = num_encoder_layers - decoder_layer - 2
@@ -172,7 +177,7 @@ class DualGAN(object):
 
             # make [batch size, 256, 256, out_channel]
             decoder8 = tf.layers.conv2d_transpose(inputs=decoder7, filters=out_channel, kernel_size=5, strides=2,
-                                                 padding='same', kernel_initializer=w_init_decoder, use_bias=True)
+                                                  padding='same', kernel_initializer=w_init_decoder, use_bias=True)
             out = tf.tanh(decoder8)
             return out
 
@@ -208,35 +213,37 @@ class DualGAN(object):
 
             logits = tf.layers.conv2d(l4, filters=1, kernel_size=5, strides=1, padding='same',
                                       kernel_initializer=w_init, use_bias=True)
-            out = tf.sigmoid(logits)
+            return logits
+            # out = tf.sigmoid(logits)
 
-            return out, logits
+            # return out, logits
 
 def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
     losses = []
     steps = 0
-
-    # for testing
-    test_image_u, test_image_v = data_loader.get_image_by_index(0)
 
     # prepare saver for saving trained model
     saver = tf.train.Saver()
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
+
         for e in range(epochs):
+            # shuffle data randomly at every epoch
+            data_loader.reset()
+
             for ii in range(data_loader.n_images // batch_size):
                 steps += 1
 
                 batch_image_u, batch_image_v = data_loader.get_next_batch(batch_size)
 
-
                 fd = {
                     net.input_u: batch_image_u,
                     net.input_v: batch_image_v
                 }
-                d_opt_out = sess.run(net.d_train_opt, feed_dict=fd)
-                g_opt_out = sess.run(net.g_train_opt, feed_dict=fd)
+                _ = sess.run(net.d_train_opt, feed_dict=fd)
+                _ = sess.run(net.g_train_opt, feed_dict=fd)
+                _ = sess.run(net.g_train_opt, feed_dict=fd)
 
                 if steps % print_every == 0:
                     # At the end of each epoch, get the losses and print them out
@@ -250,53 +257,56 @@ def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
                     losses.append((train_loss_d, train_loss_g))
 
             # save generated images on every epochs
-            g_image_u_to_v = sess.run(
-                net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=False),
-                feed_dict={net.input_u: test_image_u})
-            g_image_v_to_u = sess.run(
-                net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=False),
-                feed_dict={net.input_v: test_image_v})
+            for ii in range(5):
+                test_image_u, test_image_v = data_loader.get_image_by_index(ii)
+                g_image_u_to_v = sess.run(
+                    net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=True),
+                    feed_dict={net.input_u: test_image_u})
+                g_image_u_to_v_to_u = sess.run(
+                    net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=True),
+                    feed_dict={net.input_u: g_image_u_to_v})
 
-            g_image_u_to_v_to_u = sess.run(
-                net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=False),
-                feed_dict={net.input_u: g_image_u_to_v})
-            g_image_v_to_u_to_v = sess.run(
-                net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=False),
-                feed_dict={net.input_v: g_image_v_to_u})
+                g_image_v_to_u = sess.run(
+                    net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=True),
+                    feed_dict={net.input_v: test_image_v})
+                g_image_v_to_u_to_v = sess.run(
+                    net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=True),
+                    feed_dict={net.input_v: g_image_v_to_u})
 
-            image_fn = './assets/epoch_{:d}_tf.png'.format(e)
-            helper.save_result(image_fn,
-                               test_image_u, g_image_u_to_v, g_image_u_to_v_to_u,
-                               test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
+                image_fn = './assets/{:s}/epoch_{:d}_{:d}_tf.png'.format(dataset_name, e, ii)
+                helper.save_result(image_fn,
+                                   test_image_u, g_image_u_to_v, g_image_u_to_v_to_u,
+                                   test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
 
-        ckpt_fn = './checkpoints/DualGAN-{}.ckpt'.format(dataset_name)
+        ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
         saver.save(sess, ckpt_fn)
 
     return losses
 
 def test(net, dataset_name, data_loader):
+    ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
     saver = tf.train.Saver()
     with tf.Session() as sess:
-        saver.restore(sess, tf.train.latest_checkpoint('./checkpoints'))
+        saver.restore(sess, ckpt_fn)
 
         for ii in range(data_loader.n_images):
             test_image_u, test_image_v = data_loader.get_image_by_index(ii)
 
             g_image_u_to_v = sess.run(
-                net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=False),
+                net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=True),
                 feed_dict={net.input_u: test_image_u})
-            g_image_v_to_u = sess.run(
-                net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=False),
-                feed_dict={net.input_v: test_image_v})
-
             g_image_u_to_v_to_u = sess.run(
-                net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=False),
+                net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=True),
                 feed_dict={net.input_u: g_image_u_to_v})
+
+            g_image_v_to_u = sess.run(
+                net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=True),
+                feed_dict={net.input_v: test_image_v})
             g_image_v_to_u_to_v = sess.run(
-                net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=False),
+                net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=True),
                 feed_dict={net.input_v: g_image_v_to_u})
 
-            image_fn = './assets/{:s}_result_{:4d}_tf.png'.format(dataset_name, ii)
+            image_fn = './assets/{:s}/{:s}_result_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
             helper.save_result(image_fn,
                                test_image_u, g_image_u_to_v, g_image_u_to_v_to_u,
                                test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
@@ -315,42 +325,65 @@ def main():
         parameter_set = json.load(json_data)
 
     # start working!!
-    for train_val_param in parameter_set:
-        fn_ext = train_val_param['file_extension']
-        dataset_name = train_val_param['dataset_name']
-        train_dir_u = train_val_param['train_dataset_dir_u']
-        train_dir_v = train_val_param['train_dataset_dir_v']
-        val_dir_u = train_val_param['val_dataset_dir_u']
-        val_dir_v = train_val_param['val_dataset_dir_v']
-        epochs = train_val_param['epochs']
-        batch_size = train_val_param['batch_size']
-        im_size = train_val_param['im_size']
-        im_channel = train_val_param['im_channel']
-        do_flip = train_val_param['do_flip']
+    for param in parameter_set:
+        fn_ext = param['file_extension']
+        dataset_name = param['dataset_name']
+        dataset_dir_u = param['dataset_dir_u']
+        dataset_dir_v = param['dataset_dir_v']
+        epochs = param['epochs']
+        batch_size = param['batch_size']
+        im_size = param['im_size']
+        im_channel = param['im_channel']
+        do_flip = param['do_flip']
+        is_test = param['is_test']
 
-        # load train & validation datasets
-        train_data_loader = helper.Dataset(train_dir_u, train_dir_v, fn_ext,
-                                           im_size, im_channel, im_channel, do_flip=do_flip, do_shuffle=True)
-        val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext,
-                                         im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
+        # make directory per dataset
+        current_assets_dir = './assets/{}/'.format(dataset_name)
+        if not os.path.isdir(current_assets_dir):
+            os.mkdir(current_assets_dir)
 
         # prepare network
         net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
 
-        # start training
-        start_time = time.time()
-        train(net, dataset_name, train_data_loader, epochs, batch_size)
-        end_time = time.time()
-        total_time = end_time - start_time
-        test_result_str ='[Training result]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}\n'.format(
-            dataset_name, epochs, batch_size, total_time)
-        print(test_result_str)
+        if not is_test:
+            # load train datasets
+            train_data_loader = helper.Dataset(dataset_dir_u, dataset_dir_v, fn_ext,
+                                               im_size, im_channel, im_channel, do_flip=do_flip, do_shuffle=True)
 
-        with open('./assets/test_summary.txt', 'a') as f:
-            f.write(test_result_str)
+            # start training
+            start_time = time.time()
+            losses = train(net, dataset_name, train_data_loader, epochs, batch_size)
+            end_time = time.time()
+            total_time = end_time - start_time
+            test_result_str = '[Training]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}\n'.format(
+                dataset_name, epochs, batch_size, total_time)
+            print(test_result_str)
 
-        # validation
-        test(net, dataset_name, val_data_loader)
+            with open('./assets/test_summary.txt', 'a') as f:
+                f.write(test_result_str)
+
+        else:
+            # load train datasets
+            val_data_loader = helper.Dataset(dataset_dir_u, dataset_dir_v, fn_ext,
+                                             im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
+
+            # validation
+            test(net, dataset_name, val_data_loader)
+
+def test1():
+    fn_ext = 'jpg'
+    dataset_name = 'sketch-photo'
+    val_dir_u = '../data_set/DualGAN/sketch-photo/val/A'
+    val_dir_v = '../data_set/DualGAN/sketch-photo/val/B'
+    im_size = 256
+    im_channel = 1
+
+    val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext,
+                                     im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
+    net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
+    test(net, dataset_name, val_data_loader)
 
 if __name__ == '__main__':
     main()
+    # test1()
+
