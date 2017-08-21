@@ -1,54 +1,26 @@
 [
-        {
-            "file_extension": "jpg",
-            "dataset_name": "sketch-photo",
-            "train_dataset_dir_u": "../data_set/DualGAN/sketch-photo/train/A",
-            "train_dataset_dir_v": "../data_set/DualGAN/sketch-photo/train/B",
-            "val_dataset_dir_u": "../data_set/DualGAN/sketch-photo/val/A",
-            "val_dataset_dir_v": "../data_set/DualGAN/sketch-photo/val/B",
-            "epochs": 45,
-            "batch_size": 1,
-            "im_size": 256,
-            "im_channel": 1,
-            "do_flip": true
-        },
-        {
-            "file_extension": "jpg",
-            "dataset_name": "oil-chinese",
-            "train_dataset_dir_u": "../data_set/DualGAN/oil-chinese/train/A",
-            "train_dataset_dir_v": "../data_set/DualGAN/oil-chinese/train/B",
-            "val_dataset_dir_u": "../data_set/DualGAN/oil-chinese/val/A",
-            "val_dataset_dir_v": "../data_set/DualGAN/oil-chinese/val/B",
-            "epochs": 45,
-            "batch_size": 1,
-            "im_size": 256,
-            "im_channel": 3,
-            "do_flip": true
-        },
-        {
-            "file_extension": "jpg",
-            "dataset_name": "facades",
-            "train_dataset_dir_u": "../data_set/DualGAN/facades/train/A",
-            "train_dataset_dir_v": "../data_set/DualGAN/facades/train/B",
-            "val_dataset_dir_u": "../data_set/DualGAN/facades/val/A",
-            "val_dataset_dir_v": "../data_set/DualGAN/facades/val/B",
-            "epochs": 45,
-            "batch_size": 1,
-            "im_size": 256,
-            "im_channel": 3,
-            "do_flip": true
-        },
-        {
-            "file_extension": "jpg",
-            "dataset_name": "day-night",
-            "train_dataset_dir_u": "../data_set/DualGAN/day-night/train/A",
-            "train_dataset_dir_v": "../data_set/DualGAN/day-night/train/B",
-            "val_dataset_dir_u": "../data_set/DualGAN/day-night/val/A",
-            "val_dataset_dir_v": "../data_set/DualGAN/day-night/val/B",
-            "epochs": 45,
-            "batch_size": 1,
-            "im_size": 256,
-            "im_channel": 3,
-            "do_flip": true
-        }
-    ]
+  {
+    "file_extension": "jpg",
+    "dataset_name": "sketch-photo",
+    "dataset_dir_u": "../data_set/DualGAN/sketch-photo/train/A",
+    "dataset_dir_v": "../data_set/DualGAN/sketch-photo/train/B",
+    "epochs": 45,
+    "batch_size": 1,
+    "im_size": 256,
+    "im_channel": 1,
+    "do_flip": true,
+    "is_test": false
+  },
+  {
+    "file_extension": "jpg",
+    "dataset_name": "sketch-photo",
+    "dataset_dir_u": "../data_set/DualGAN/sketch-photo/val/A",
+    "dataset_dir_v": "../data_set/DualGAN/sketch-photo/val/B",
+    "epochs": 45,
+    "batch_size": 1,
+    "im_size": 256,
+    "im_channel": 1,
+    "do_flip": false,
+    "is_test": true
+  }
+]

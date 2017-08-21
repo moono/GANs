@@ -40,24 +40,28 @@ class DualGAN(object):
         self.input_u = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_u], name='input_u')
         self.input_v = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_v], name='input_v')
 
+        # generators
+        self.g_model_u_v = self.generator('u-to-v', self.input_u, out_channel=self.channel_v,
+                                          reuse=False, is_training=True)
+        self.g_model_v_u = self.generator('v-to-u', self.input_v, out_channel=self.channel_u,
+                                          reuse=False, is_training=True)
+        self.g_model_u_v_u = self.generator('v-to-u', self.g_model_u_v, out_channel=self.channel_u,
+                                            reuse=True, is_training=True)
+        self.g_model_v_u_v = self.generator('u-to-v', self.g_model_v_u, out_channel=self.channel_v,
+                                            reuse=True, is_training=True)
+
         # define loss & optimizer
         self.d_loss, self.g_loss = self.model_loss(self.input_u, self.input_v)
         self.d_train_opt, self.g_train_opt = self.model_opt(self.d_loss, self.g_loss)
 
 
     def model_loss(self, input_u, input_v):
-        # generators
-        g_model_u_v = self.generator('u-to-v', input_u, out_channel=self.channel_v, reuse=False, is_training=True)
-        g_model_v_u = self.generator('v-to-u', input_v, out_channel=self.channel_u, reuse=False, is_training=True)
-        g_model_u_v_u = self.generator('v-to-u', g_model_u_v, out_channel=self.channel_u, reuse=True, is_training=True)
-        g_model_v_u_v = self.generator('u-to-v', g_model_v_u, out_channel=self.channel_v, reuse=True, is_training=True)
-
         # compute L1 loss of G
-        g_loss_l1_u = tf.reduce_mean(tf.abs(g_model_u_v_u - input_u))
-        g_loss_l1_v = tf.reduce_mean(tf.abs(g_model_v_u_v - input_v))
+        g_loss_l1_u = tf.reduce_mean(tf.abs(self.g_model_u_v_u - input_u))
+        g_loss_l1_v = tf.reduce_mean(tf.abs(self.g_model_v_u_v - input_v))
 
         # u related losses
-        d_model_u_fake_logits = self.discriminator('u', g_model_u_v, reuse=False, is_training=True)
+        d_model_u_fake_logits = self.discriminator('u', self.g_model_u_v, reuse=False, is_training=True)
         d_model_u_real_logits = self.discriminator('u', input_v, reuse=True, is_training=True)
         d_loss_real_u = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_real_logits,
@@ -72,7 +76,7 @@ class DualGAN(object):
         g_loss_u = g_loss_gan_u + self.lambda_v * g_loss_l1_v
 
         # v related losses
-        d_model_v_fake_logits = self.discriminator('v', g_model_v_u, reuse=False, is_training=True)
+        d_model_v_fake_logits = self.discriminator('v', self.g_model_v_u, reuse=False, is_training=True)
         d_model_v_real_logits = self.discriminator('v', input_u, reuse=True, is_training=True)
         d_loss_real_v = tf.reduce_mean(
             tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_real_logits,
@@ -111,6 +115,7 @@ class DualGAN(object):
         with tf.variable_scope(variable_scope_name, reuse=reuse):
             w_init_encoder = tf.truncated_normal_initializer(stddev=self.stddev)
             w_init_decoder = tf.random_normal_initializer(stddev=self.stddev)
+            use_bias = True
 
             # prepare to stack layers to follow U-Net shape
             # inputs -> e1 -> e2 -> e3 -> e4 -> e5 -> e6 -> e7
@@ -125,7 +130,7 @@ class DualGAN(object):
             # encoders
             # make [batch size, 128, 128, 64]
             encoder1 = tf.layers.conv2d(inputs, filters=self.n_g_filter_start, kernel_size=5, strides=2,
-                                        padding='same', kernel_initializer=w_init_encoder, use_bias=True)
+                                        padding='same', kernel_initializer=w_init_encoder, use_bias=use_bias)
             layers.append(encoder1)
 
             encoder_spec = [
@@ -141,7 +146,7 @@ class DualGAN(object):
             for ii, n_filters in enumerate(encoder_spec):
                 prev_activated = tf.maximum(self.alpha * layers[-1], layers[-1])
                 encoder = tf.layers.conv2d(prev_activated, filters=n_filters, kernel_size=5, strides=2, padding='same',
-                                           kernel_initializer=w_init_encoder, use_bias=True)
+                                           kernel_initializer=w_init_encoder, use_bias=use_bias)
                 encoder = tf.layers.batch_normalization(inputs=encoder, training=is_training)
                 layers.append(encoder)
 
@@ -160,7 +165,7 @@ class DualGAN(object):
             for decoder_layer, (n_filters, dropout) in enumerate(decoder_spec):
                 prev_activated = tf.nn.relu(layers[-1])
                 decoder = tf.layers.conv2d_transpose(inputs=prev_activated, filters=n_filters, kernel_size=5, strides=2,
-                                                     padding='same', kernel_initializer=w_init_decoder, use_bias=True)
+                                                     padding='same', kernel_initializer=w_init_decoder, use_bias=use_bias)
                 decoder = tf.layers.batch_normalization(inputs=decoder, training=is_training)
 
                 # handle dropout (use dropout at training & inference)
@@ -185,38 +190,36 @@ class DualGAN(object):
         variable_scope_name = 'discriminator_{:s}'.format(scope_name)
         with tf.variable_scope(variable_scope_name, reuse=reuse):
             w_init = tf.truncated_normal_initializer(stddev=self.stddev)
+            use_bias = True
 
             # expected inputs shape: [batch size, 256, 256, input_channel]
 
             # layer_1: [batch, 256, 256, input_channel] => [batch, 128, 128, 64], without batchnorm
             l1 = tf.layers.conv2d(inputs, filters=self.n_d_filter_start, kernel_size=5, strides=2, padding='same',
-                                  kernel_initializer=w_init, use_bias=True)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l1 = tf.maximum(self.alpha * l1, l1)
 
             # layer_2: [batch, 128, 128, 64] => [batch, 64, 64, 128], with batchnorm
             l2 = tf.layers.conv2d(l1, filters=self.n_d_filter_start * 2, kernel_size=5, strides=2, padding='same',
-                                  kernel_initializer=w_init, use_bias=True)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l2 = tf.layers.batch_normalization(inputs=l2, training=is_training)
             l2 = tf.maximum(self.alpha * l2, l2)
 
             # layer_3: [batch, 64, 64, 128] => [batch, 32, 32, 256], with batchnorm
             l3 = tf.layers.conv2d(l2, filters=self.n_d_filter_start * 4, kernel_size=5, strides=2, padding='same',
-                                  kernel_initializer=w_init, use_bias=True)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l3 = tf.layers.batch_normalization(inputs=l3, training=is_training)
             l3 = tf.maximum(self.alpha * l3, l3)
 
             # layer_4: [batch, 32, 32, 256] => [batch, 32, 32, 512], with batchnorm
             l4 = tf.layers.conv2d(l3, filters=self.n_d_filter_start * 8, kernel_size=5, strides=1, padding='same',
-                                  kernel_initializer=w_init, use_bias=True)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l4 = tf.layers.batch_normalization(inputs=l4, training=is_training)
             l4 = tf.maximum(self.alpha * l4, l4)
 
             logits = tf.layers.conv2d(l4, filters=1, kernel_size=5, strides=1, padding='same',
-                                      kernel_initializer=w_init, use_bias=True)
+                                      kernel_initializer=w_init, use_bias=use_bias)
             return logits
-            # out = tf.sigmoid(logits)
-
-            # return out, logits
 
 def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
     losses = []
@@ -257,21 +260,12 @@ def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
                     losses.append((train_loss_d, train_loss_g))
 
             # save generated images on every epochs
-            for ii in range(5):
+            for ii in range(3):
                 test_image_u, test_image_v = data_loader.get_image_by_index(ii)
-                g_image_u_to_v = sess.run(
-                    net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=True),
-                    feed_dict={net.input_u: test_image_u})
-                g_image_u_to_v_to_u = sess.run(
-                    net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=True),
-                    feed_dict={net.input_u: g_image_u_to_v})
-
-                g_image_v_to_u = sess.run(
-                    net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=True),
-                    feed_dict={net.input_v: test_image_v})
-                g_image_v_to_u_to_v = sess.run(
-                    net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=True),
-                    feed_dict={net.input_v: g_image_v_to_u})
+                g_image_u_to_v, g_image_u_to_v_to_u = sess.run([net.g_model_u_v, net.g_model_u_v_u],
+                                                               feed_dict={net.input_u: test_image_u})
+                g_image_v_to_u, g_image_v_to_u_to_v = sess.run([net.g_model_v_u, net.g_model_v_u_v],
+                                                               feed_dict={net.input_v: test_image_v})
 
                 image_fn = './assets/{:s}/epoch_{:d}_{:d}_tf.png'.format(dataset_name, e, ii)
                 helper.save_result(image_fn,
@@ -292,19 +286,24 @@ def test(net, dataset_name, data_loader):
         for ii in range(data_loader.n_images):
             test_image_u, test_image_v = data_loader.get_image_by_index(ii)
 
-            g_image_u_to_v = sess.run(
-                net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=True),
-                feed_dict={net.input_u: test_image_u})
-            g_image_u_to_v_to_u = sess.run(
-                net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=True),
-                feed_dict={net.input_u: g_image_u_to_v})
+            g_image_u_to_v, g_image_u_to_v_to_u = sess.run([net.g_model_u_v, net.g_model_u_v_u],
+                                                           feed_dict={net.input_u: test_image_u})
+            g_image_v_to_u, g_image_v_to_u_to_v = sess.run([net.g_model_v_u, net.g_model_v_u_v],
+                                                           feed_dict={net.input_v: test_image_v})
 
-            g_image_v_to_u = sess.run(
-                net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=True),
-                feed_dict={net.input_v: test_image_v})
-            g_image_v_to_u_to_v = sess.run(
-                net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=True),
-                feed_dict={net.input_v: g_image_v_to_u})
+            # g_image_u_to_v = sess.run(
+            #     net.generator('u-to-v', net.input_u, out_channel=net.channel_v, reuse=True, is_training=True),
+            #     feed_dict={net.input_u: test_image_u})
+            # g_image_u_to_v_to_u = sess.run(
+            #     net.generator('v-to-u', net.input_u, out_channel=net.channel_u, reuse=True, is_training=True),
+            #     feed_dict={net.input_u: g_image_u_to_v})
+            #
+            # g_image_v_to_u = sess.run(
+            #     net.generator('v-to-u', net.input_v, out_channel=net.channel_u, reuse=True, is_training=True),
+            #     feed_dict={net.input_v: test_image_v})
+            # g_image_v_to_u_to_v = sess.run(
+            #     net.generator('u-to-v', net.input_v, out_channel=net.channel_v, reuse=True, is_training=True),
+            #     feed_dict={net.input_v: g_image_v_to_u})
 
             image_fn = './assets/{:s}/{:s}_result_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
             helper.save_result(image_fn,
@@ -370,20 +369,19 @@ def main():
             # validation
             test(net, dataset_name, val_data_loader)
 
-def test1():
-    fn_ext = 'jpg'
-    dataset_name = 'sketch-photo'
-    val_dir_u = '../data_set/DualGAN/sketch-photo/val/A'
-    val_dir_v = '../data_set/DualGAN/sketch-photo/val/B'
-    im_size = 256
-    im_channel = 1
-
-    val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext,
-                                     im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
-    net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
-    test(net, dataset_name, val_data_loader)
+# def test1():
+#     fn_ext = 'jpg'
+#     dataset_name = 'sketch-photo'
+#     val_dir_u = '../data_set/DualGAN/sketch-photo/val/A'
+#     val_dir_v = '../data_set/DualGAN/sketch-photo/val/B'
+#     im_size = 256
+#     im_channel = 1
+#
+#     val_data_loader = helper.Dataset(val_dir_u, val_dir_v, fn_ext,
+#                                      im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
+#     net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
+#     test(net, dataset_name, val_data_loader)
 
 if __name__ == '__main__':
     main()
-    # test1()
 
