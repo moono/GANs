@@ -72,7 +72,8 @@ def generator(inputs, out_channels, n_first_layer_filter=64, alpha=0.2, reuse=Fa
 
             # handle dropout
             if dropout > 0.0:
-               layer = tf.layers.dropout(layer, rate=dropout)
+               # layer = tf.layers.dropout(layer, rate=dropout)
+               layer = tf.layers.dropout(layer, rate=dropout, training=True)
 
             # stack
             layers.append(layer)
