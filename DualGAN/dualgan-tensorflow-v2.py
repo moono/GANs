@@ -7,148 +7,132 @@ import json
 import helper
 
 
+def batch_norm(x,  name="batch_norm"):
+    eps = 1e-6
+    with tf.variable_scope(name):
+        nchannels = x.get_shape()[3]
+        scale = tf.get_variable("scale", [nchannels], initializer=tf.random_normal_initializer(1.0, 0.02, dtype=tf.float32))
+        center = tf.get_variable("center", [nchannels], initializer=tf.constant_initializer(0.0, dtype = tf.float32))
+        ave, dev = tf.nn.moments(x, axes=[1,2], keep_dims=True)
+        inv_dev = tf.rsqrt(dev + eps)
+        normalized = (x-ave)*inv_dev * scale + center
+        return normalized
+
+def conv2d(input_, output_dim,
+           k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
+           name="conv2d"):
+    with tf.variable_scope(name):
+        w = tf.get_variable('w', [k_h, k_w, input_.get_shape()[-1], output_dim],
+                            initializer=tf.truncated_normal_initializer(stddev=stddev))
+        conv = tf.nn.conv2d(input_, w, strides=[1, d_h, d_w, 1], padding='SAME')
+
+        biases = tf.get_variable('biases', [output_dim], initializer=tf.constant_initializer(0.0))
+        desired_shape = conv.get_shape().as_list()
+        desired_shape[0] = 1
+        conv = tf.reshape(tf.nn.bias_add(conv, biases), desired_shape)
+
+        return conv
+
+def deconv2d(input_, output_shape,
+             k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
+             name="deconv2d"):
+    with tf.variable_scope(name):
+        # filter : [height, width, output_channels, in_channels]
+        w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
+                            initializer=tf.random_normal_initializer(stddev=stddev))
+        deconv = tf.nn.conv2d_transpose(input_, w, output_shape=output_shape,
+                                        strides=[1, d_h, d_w, 1])
+
+        biases = tf.get_variable('biases', [output_shape[-1]], initializer=tf.constant_initializer(0.0))
+        desired_shape = deconv.get_shape().as_list()
+        desired_shape[0] = 1
+        deconv = tf.reshape(tf.nn.bias_add(deconv, biases), desired_shape)
+
+        return deconv
+
+def lrelu(x, leak=0.2, name="lrelu"):
+    return tf.maximum(x, leak*x)
+
 def generator(postfix, inputs, out_channel, n_filter_start, alpha=0.2, stddev=0.02, reuse=False, is_training=True):
     scope_name = 'generator-{:s}'.format(postfix)
     with tf.variable_scope(scope_name, reuse=reuse):
-        w_init_encoder = tf.truncated_normal_initializer(stddev=stddev)
-        w_init_decoder = tf.random_normal_initializer(stddev=stddev)
-        use_bias = True
+        s = inputs.get_shape().as_list()[1]
+        s2, s4, s8, s16, s32, s64, s128 = int(s / 2), int(s / 4), int(s / 8), int(s / 16), int(s / 32), int(
+            s / 64), int(s / 128)
 
-        # prepare to stack layers to follow U-Net shape
-        # inputs -> e1 -> e2 -> e3 -> e4 -> e5 -> e6 -> e7
-        #           |     |     |     |     |     |     |  \
-        #           |     |     |     |     |     |     |   e8
-        #           V     V     V     V     V     V     V  /
-        #     d8 <- d7 <- d6 <- d5 <- d4 <- d3 <- d2 <- d1
-        layers = []
+        # imgs is (256 x 256 x input_c_dim)
+        e1 = conv2d(inputs, n_filter_start, name=postfix + 'e1_conv')
+        # e1 is (128 x 128 x n_filter_start)
+        e2 = batch_norm(conv2d(lrelu(e1), n_filter_start * 2, name=postfix + 'e2_conv'), name=postfix + 'bn_e2')
+        # e2 is (64 x 64 x n_filter_start*2)
+        e3 = batch_norm(conv2d(lrelu(e2), n_filter_start * 4, name=postfix + 'e3_conv'), name=postfix + 'bn_e3')
+        # e3 is (32 x 32 x n_filter_start*4)
+        e4 = batch_norm(conv2d(lrelu(e3), n_filter_start * 8, name=postfix + 'e4_conv'), name=postfix + 'bn_e4')
+        # e4 is (16 x 16 x n_filter_start*8)
+        e5 = batch_norm(conv2d(lrelu(e4), n_filter_start * 8, name=postfix + 'e5_conv'), name=postfix + 'bn_e5')
+        # e5 is (8 x 8 x n_filter_start*8)
+        e6 = batch_norm(conv2d(lrelu(e5), n_filter_start * 8, name=postfix + 'e6_conv'), name=postfix + 'bn_e6')
+        # e6 is (4 x 4 x n_filter_start*8)
+        e7 = batch_norm(conv2d(lrelu(e6), n_filter_start * 8, name=postfix + 'e7_conv'), name=postfix + 'bn_e7')
+        # e7 is (2 x 2 x n_filter_start*8)
+        e8 = batch_norm(conv2d(lrelu(e7), n_filter_start * 8, name=postfix + 'e8_conv'), name=postfix + 'bn_e8')
+        # e8 is (1 x 1 x n_filter_start*8)
 
-        # define names for each tensor operations
-        ecnames = []     # encoder convolution
-        ecbnnames = []   # encoder batch-normalization
-        dcnames = []     # decoder deconvolution
-        dcbnnames = []   # decoder batch-normalization
-        for ii in range(1, 9):
-            # encoders
-            ecname = 'g_ec{:d}_{:s}'.format(ii, postfix)
-            ecbnname = 'g_ecbn{:d}_{:s}'.format(ii, postfix)
-            ecnames.append(ecname)
-            ecbnnames.append(ecbnname)
+        d1 = deconv2d(tf.nn.relu(e8), [1, s128, s128, n_filter_start * 8], name=postfix + 'd1')
+        d1 = tf.nn.dropout(batch_norm(d1, name=postfix + 'bn_d1'), 0.5)
+        d1 = tf.concat([d1, e7], 3)
+        # d1 is (2 x 2 x n_filter_start*8*2)
 
-            # decoders
-            dcname = 'g_dc{:d}_{:s}'.format(ii, postfix)
-            dcbnname = 'g_dcbn{:d}_{:s}'.format(ii, postfix)
-            dcdname = 'g_dcd{:d}_{:s}'.format(ii, postfix)
-            dcnames.append(dcname)
-            dcbnnames.append(dcbnname)
+        d2 = deconv2d(tf.nn.relu(d1), [1, s64, s64, n_filter_start * 8], name=postfix + 'd2')
+        d2 = tf.nn.dropout(batch_norm(d2, name=postfix + 'bn_d2'), 0.5)
 
-        # expected inputs shape: [batch size, 256, 256, input_channel]
+        d2 = tf.concat([d2, e6], 3)
+        # d2 is (4 x 4 x n_filter_start*8*2)
 
-        # encoders
-        # make [batch size, 128, 128, 64]
-        encoder1 = tf.layers.conv2d(inputs, filters=n_filter_start, kernel_size=5, strides=2, padding='same',
-                                    kernel_initializer=w_init_encoder, use_bias=use_bias, name=ecnames[0])
-        layers.append(encoder1)
+        d3 = deconv2d(tf.nn.relu(d2), [1, s32, s32, n_filter_start * 8], name=postfix + 'd3')
+        d3 = tf.nn.dropout(batch_norm(d3, name=postfix + 'bn_d3'), 0.5)
 
-        encoder_spec = [
-            n_filter_start * 2,  # encoder 2: [batch size, 128, 128, 64] => [batch size, 64, 64, 128]
-            n_filter_start * 4,  # encoder 3: [batch size, 64, 64, 128] => [batch size, 32, 32, 256]
-            n_filter_start * 8,  # encoder 4: [batch size, 32, 32, 256] => [batch size, 16, 16, 512]
-            n_filter_start * 8,  # encoder 5: [batch size, 16, 16, 512] => [batch size, 8, 8, 512]
-            n_filter_start * 8,  # encoder 6: [batch size, 8, 8, 512] => [batch size, 4, 4, 512]
-            n_filter_start * 8,  # encoder 7: [batch size, 4, 4, 512] => [batch size, 2, 2, 512]
-            n_filter_start * 8,  # encoder 8: [batch size, 2, 2, 512] => [batch size, 1, 1, 512]
-        ]
+        d3 = tf.concat([d3, e5], 3)
+        # d3 is (8 x 8 x n_filter_start*8*2)
 
-        for ii, n_filters in enumerate(encoder_spec):
-            prev_activated = tf.maximum(alpha * layers[-1], layers[-1])
-            encoder = tf.layers.conv2d(prev_activated, filters=n_filters, kernel_size=5, strides=2, padding='same',
-                                       kernel_initializer=w_init_encoder, use_bias=use_bias, name=ecnames[ii+1])
-            encoder = tf.layers.batch_normalization(inputs=encoder, training=is_training, name=ecbnnames[ii+1])
-            layers.append(encoder)
+        d4 = deconv2d(tf.nn.relu(d3), [1, s16, s16, n_filter_start * 8], name=postfix + 'd4')
+        d4 = batch_norm(d4, name=postfix + 'bn_d4')
 
-        decoder_spec = [
-            (n_filter_start * 8, 0.5),  # decoder 1: [batch size, 1, 1, 512] => [batch size, 2, 2, 512*2]
-            (n_filter_start * 8, 0.5),  # decoder 2: [batch size, 2, 2, 512*2] => [batch size, 4, 4, 512*2]
-            (n_filter_start * 8, 0.5),  # decoder 3: [batch size, 4, 4, 512*2] => [batch size, 8, 8, 512*2]
-            (n_filter_start * 8, 0.0),  # decoder 4: [batch size, 8, 8, 512*2] => [batch size, 16, 16, 512*2]
-            (n_filter_start * 4, 0.0),  # decoder 5: [batch size, 16, 16, 512*2] => [batch size, 32, 32, 256*2]
-            (n_filter_start * 2, 0.0),  # decoder 6: [batch size, 32, 32, 256*2] => [batch size, 64, 64, 128*2]
-            (n_filter_start, 0.0),  # decoder 7: [batch size, 64, 64, 128*2] => [batch size, 128, 128, 64*2]
-        ]
+        d4 = tf.concat([d4, e4], 3)
+        # d4 is (16 x 16 x n_filter_start*8*2)
 
-        # decoders
-        num_encoder_layers = len(layers)
-        for ii, (n_filters, dropout) in enumerate(decoder_spec):
-            # dname = 'g_d{:d}_{:s}'.format(decoder_layer + 1, prefix)
-            # dbnname = 'g_dbn{:d}_{:s}'.format(decoder_layer + 1, prefix)
-            prev_activated = tf.nn.relu(layers[-1])
-            decoder = tf.layers.conv2d_transpose(inputs=prev_activated, filters=n_filters, kernel_size=5, strides=2,
-                                                 padding='same', kernel_initializer=w_init_decoder, use_bias=use_bias,
-                                                 name=dcnames[ii])
-            decoder = tf.layers.batch_normalization(inputs=decoder, training=is_training, name=dcbnnames[ii])
+        d5 = deconv2d(tf.nn.relu(d4), [1, s8, s8, n_filter_start * 4], name=postfix + 'd5')
+        d5 = batch_norm(d5, name=postfix + 'bn_d5')
+        d5 = tf.concat([d5, e3], 3)
+        # d5 is (32 x 32 x n_filter_start*4*2)
 
-            # handle dropout (use dropout at training & inference)
-            if dropout > 0.0:
-                # decoder = tf.layers.dropout(decoder, rate=dropout)
-                decoder = tf.layers.dropout(decoder, rate=dropout, training=True)
+        d6 = deconv2d(tf.nn.relu(d5), [1, s4, s4, n_filter_start * 2], name=postfix + 'd6')
+        d6 = batch_norm(d6, name=postfix + 'bn_d6')
+        d6 = tf.concat([d6, e2], 3)
+        # d6 is (64 x 64 x n_filter_start*2*2)
 
-            # handle skip layer
-            skip_layer_index = num_encoder_layers - ii - 2
-            concat = tf.concat([decoder, layers[skip_layer_index]], axis=3)
-            layers.append(concat)
+        d7 = deconv2d(tf.nn.relu(d6), [1, s2, s2, n_filter_start], name=postfix + 'd7')
+        d7 = batch_norm(d7, name=postfix + 'bn_d7')
+        d7 = tf.concat([d7, e1], 3)
+        # d7 is (128 x 128 x n_filter_start*1*2)
 
-        decoder7 = tf.nn.relu(layers[-1])
-
-        # make [batch size, 256, 256, out_channel]
-        decoder8 = tf.layers.conv2d_transpose(inputs=decoder7, filters=out_channel, kernel_size=5, strides=2,
-                                              padding='same', kernel_initializer=w_init_decoder, use_bias=True,
-                                              name=dcnames[-1])
-        out = tf.tanh(decoder8)
-        return out
+        d8 = deconv2d(tf.nn.relu(d7), [1, s, s, out_channel], name=postfix + 'd8')
+        # d8 is (256 x 256 x output_c_dim)
+        return tf.nn.tanh(d8)
 
 def discriminator(postfix, inputs, n_filter_start, alpha=0.2, stddev=0.02, reuse=False, is_training=True):
     scope_name = 'discriminator-{:s}'.format(postfix)
     with tf.variable_scope(scope_name, reuse=reuse):
-        w_init = tf.truncated_normal_initializer(stddev=stddev)
-        use_bias = True
-
-        # define names for each tensor operations
-        cnames = []     # convolution
-        cbnnames = []   # batch-normalization
-        for ii in range(1, 6):
-            cname = 'd_c{:d}_{:s}'.format(ii, postfix)
-            cbnname = 'd_cbn{:d}_{:s}'.format(ii, postfix)
-            cnames.append(cname)
-            cbnnames.append(cbnname)
-
-        # expected inputs shape: [batch size, 256, 256, input_channel]
-
-        # layer_1: [batch, 256, 256, input_channel] => [batch, 128, 128, 64], without batchnorm
-        l1 = tf.layers.conv2d(inputs, filters=n_filter_start, kernel_size=5, strides=2, padding='same',
-                              kernel_initializer=w_init, use_bias=use_bias, name=cnames[0])
-        l1 = tf.maximum(alpha * l1, l1)
-
-        # layer_2: [batch, 128, 128, 64] => [batch, 64, 64, 128], with batchnorm
-        l2 = tf.layers.conv2d(l1, filters=n_filter_start * 2, kernel_size=5, strides=2, padding='same',
-                              kernel_initializer=w_init, use_bias=use_bias, name=cnames[1])
-        l2 = tf.layers.batch_normalization(inputs=l2, training=is_training, name=cbnnames[1])
-        l2 = tf.maximum(alpha * l2, l2)
-
-        # layer_3: [batch, 64, 64, 128] => [batch, 32, 32, 256], with batchnorm
-        l3 = tf.layers.conv2d(l2, filters=n_filter_start * 4, kernel_size=5, strides=2, padding='same',
-                              kernel_initializer=w_init, use_bias=use_bias, name=cnames[2])
-        l3 = tf.layers.batch_normalization(inputs=l3, training=is_training, name=cbnnames[2])
-        l3 = tf.maximum(alpha * l3, l3)
-
-        # layer_4: [batch, 32, 32, 256] => [batch, 32, 32, 512], with batchnorm
-        l4 = tf.layers.conv2d(l3, filters=n_filter_start * 8, kernel_size=5, strides=1, padding='same',
-                              kernel_initializer=w_init, use_bias=use_bias, name=cnames[3])
-        l4 = tf.layers.batch_normalization(inputs=l4, training=is_training, name=cbnnames[3])
-        l4 = tf.maximum(alpha * l4, l4)
-
-        logits = tf.layers.conv2d(l4, filters=1, kernel_size=5, strides=1, padding='same',
-                                  kernel_initializer=w_init, use_bias=use_bias, name=cnames[4])
-        return logits
+        h0 = lrelu(conv2d(inputs, n_filter_start, name=postfix + 'h0_conv'))
+        # h0 is (128 x 128 x self.df_dim)
+        h1 = lrelu(batch_norm(conv2d(h0, n_filter_start * 2, name=postfix + 'h1_conv'), name=postfix + 'bn1'))
+        # h1 is (64 x 64 x self.df_dim*2)
+        h2 = lrelu(batch_norm(conv2d(h1, n_filter_start * 4, name=postfix + 'h2_conv'), name=postfix + 'bn2'))
+        # h2 is (32x 32 x self.df_dim*4)
+        h3 = lrelu(batch_norm(conv2d(h2, n_filter_start * 8, d_h=1, d_w=1, name=postfix + 'h3_conv'), name=postfix + 'bn3'))
+        # h3 is (32 x 32 x self.df_dim*8)
+        h4 = conv2d(h3, 1, d_h=1, d_w=1, name=postfix + 'h4')
+        return h4
 
 def model_loss(input_u, input_v,
                g_model_u2v2u, g_model_v2u2v,
