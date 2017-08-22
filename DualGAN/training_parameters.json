@@ -2,8 +2,7 @@
   {
     "file_extension": "jpg",
     "dataset_name": "sketch-photo",
-    "dataset_dir_u": "../data_set/DualGAN/sketch-photo/train/A",
-    "dataset_dir_v": "../data_set/DualGAN/sketch-photo/train/B",
+    "dataset_base_dir": "../data_set/DualGAN/",
     "epochs": 45,
     "batch_size": 1,
     "im_size": 256,
@@ -14,8 +13,7 @@
   {
     "file_extension": "jpg",
     "dataset_name": "sketch-photo",
-    "dataset_dir_u": "../data_set/DualGAN/sketch-photo/val/A",
-    "dataset_dir_v": "../data_set/DualGAN/sketch-photo/val/B",
+    "dataset_base_dir": "../data_set/DualGAN/",
     "epochs": 45,
     "batch_size": 1,
     "im_size": 256,
