@@ -1,5 +1,5 @@
 import tensorflow as tf
-# import numpy as np
+import numpy as np
 import os
 import time
 import json
@@ -27,7 +27,6 @@ def generator(postfix, inputs, out_channel, n_filter_start, alpha=0.2, stddev=0.
         ecbnnames = []   # encoder batch-normalization
         dcnames = []     # decoder deconvolution
         dcbnnames = []   # decoder batch-normalization
-        dcdnames = []    # decoder dropout
         for ii in range(1, 9):
             # encoders
             ecname = 'g_ec{:d}_{:s}'.format(ii, postfix)
@@ -41,7 +40,6 @@ def generator(postfix, inputs, out_channel, n_filter_start, alpha=0.2, stddev=0.
             dcdname = 'g_dcd{:d}_{:s}'.format(ii, postfix)
             dcnames.append(dcname)
             dcbnnames.append(dcbnname)
-            dcdnames.append(dcdname)
 
         # expected inputs shape: [batch size, 256, 256, input_channel]
 
@@ -92,7 +90,7 @@ def generator(postfix, inputs, out_channel, n_filter_start, alpha=0.2, stddev=0.
             # handle dropout (use dropout at training & inference)
             if dropout > 0.0:
                 # decoder = tf.layers.dropout(decoder, rate=dropout)
-                decoder = tf.layers.dropout(decoder, rate=dropout, training=True, name=dcdnames[ii])
+                decoder = tf.layers.dropout(decoder, rate=dropout, training=True)
 
             # handle skip layer
             skip_layer_index = num_encoder_layers - ii - 2
@@ -184,11 +182,13 @@ def model_loss(input_u, input_v,
     d_loss = d_loss_u + d_loss_v
     g_loss = g_loss_u + g_loss_v
 
-    return d_loss, g_loss
+    return g_loss_l1_u, g_loss_l1_v, d_loss, g_loss
 
 def model_opt(d_loss, g_loss, g_u2v_post_fix, g_v2u_post_fix, d_u_post_fix, d_v_post_fix, learning_rate):
     # Get weights and bias to update
     t_vars = tf.trainable_variables()
+    # d_vars = [var for var in t_vars if var.name.startswith('discriminator-')]
+    # g_vars = [var for var in t_vars if var.name.startswith('generator-')]
     u_d_vars = [var for var in t_vars if d_u_post_fix in var.name]
     v_d_vars = [var for var in t_vars if d_v_post_fix in var.name]
     u_g_vars = [var for var in t_vars if g_u2v_post_fix in var.name]
@@ -231,46 +231,48 @@ class DualGAN(object):
         self.input_v = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_v], name='input_v')
 
         # generators
-        self.g_model_u2v = generator(postfix='u2v', inputs=self.input_u, out_channel=self.channel_v,
+        self.g_model_u2v = generator(postfix='Gu', inputs=self.input_u, out_channel=self.channel_v,
                                      n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
                                      reuse=False, is_training=True)
-        self.g_model_v2u = generator(postfix='v2u', inputs=self.input_v, out_channel=self.channel_u,
+        self.g_model_v2u = generator(postfix='Gv', inputs=self.input_v, out_channel=self.channel_u,
                                      n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
                                      reuse=False, is_training=True)
 
-        self.g_model_u2v2u = generator(postfix='v2u', inputs=self.g_model_u2v, out_channel=self.channel_u,
+        self.g_model_u2v2u = generator(postfix='Gv', inputs=self.g_model_u2v, out_channel=self.channel_u,
                                        n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
                                        reuse=True, is_training=True)
-        self.g_model_v2u2v = generator(postfix='u2v', inputs=self.g_model_v2u, out_channel=self.channel_v,
+        self.g_model_v2u2v = generator(postfix='Gu', inputs=self.g_model_v2u, out_channel=self.channel_v,
                                        n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
                                        reuse=True, is_training=True)
 
         # discriminators
-        self.d_model_u_real_logits = discriminator(postfix='u', inputs=self.input_v,
+        self.d_model_u_real_logits = discriminator(postfix='Du', inputs=self.input_v,
                                                    n_filter_start=self.n_d_filter_start, alpha=self.alpha,
                                                    stddev=self.stddev, reuse=False, is_training=True)
-        self.d_model_u_fake_logits = discriminator(postfix='u', inputs=self.g_model_u2v,
+        self.d_model_u_fake_logits = discriminator(postfix='Du', inputs=self.g_model_u2v,
                                                    n_filter_start=self.n_d_filter_start, alpha=self.alpha,
                                                    stddev=self.stddev, reuse=True, is_training=True)
 
-        self.d_model_v_real_logits = discriminator(postfix='v', inputs=self.input_u,
+        self.d_model_v_real_logits = discriminator(postfix='Dv', inputs=self.input_u,
                                                    n_filter_start=self.n_d_filter_start, alpha=self.alpha,
                                                    stddev=self.stddev, reuse=False, is_training=True)
-        self.d_model_v_fake_logits = discriminator(postfix='v', inputs=self.g_model_v2u,
+        self.d_model_v_fake_logits = discriminator(postfix='Dv', inputs=self.g_model_v2u,
                                                    n_filter_start=self.n_d_filter_start, alpha=self.alpha,
                                                    stddev=self.stddev, reuse=True, is_training=True)
 
         # define loss & optimizer
-        self.d_loss, self.g_loss = model_loss(self.input_u, self.input_v,
-                                              self.g_model_u2v2u, self.g_model_v2u2v,
-                                              self.d_model_u_fake_logits, self.d_model_u_real_logits,
-                                              self.d_model_v_fake_logits, self.d_model_v_real_logits,
-                                              self.lambda_u, self.lambda_v)
+        self.g_loss_l1_u, self.g_loss_l1_v, self.d_loss, self.g_loss = \
+            model_loss(self.input_u, self.input_v,
+                       self.g_model_u2v2u, self.g_model_v2u2v,
+                       self.d_model_u_fake_logits, self.d_model_u_real_logits,
+                       self.d_model_v_fake_logits, self.d_model_v_real_logits,
+                       self.lambda_u, self.lambda_v)
+
         self.d_train_opt, self.g_train_opt = model_opt(self.d_loss, self.g_loss,
-                                                       'u2v', 'v2u', 'u', 'v',
+                                                       'Gu', 'Gv', 'Du', 'Dv',
                                                        self.learning_rate)
 
-def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
+def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size, print_every=30, save_every=100):
     losses = []
     steps = 0
 
@@ -282,12 +284,13 @@ def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
 
         for e in range(epochs):
             # shuffle data randomly at every epoch
-            data_loader.reset()
+            train_data_loader.reset()
+            # val_data_loader.reset()
 
-            for ii in range(data_loader.n_images // batch_size):
+            for ii in range(train_data_loader.n_images // batch_size):
                 steps += 1
 
-                batch_image_u, batch_image_v = data_loader.get_next_batch(batch_size)
+                batch_image_u, batch_image_v = train_data_loader.get_next_batch(batch_size)
 
                 fd = {
                     net.input_u: batch_image_u,
@@ -308,43 +311,54 @@ def train(net, dataset_name, data_loader, epochs, batch_size, print_every=30):
                     # Save losses to view after training
                     losses.append((train_loss_d, train_loss_g))
 
-            # save generated images on every epochs
-            for ii in range(3):
-                test_image_u, test_image_v = data_loader.get_image_by_index(ii)
-                g_image_u2v, g_image_u2v2u = sess.run([net.g_model_u2v, net.g_model_u2v2u],
-                                                      feed_dict={net.input_u: test_image_u})
-                g_image_v2u, g_image_v2u2v = sess.run([net.g_model_v2u, net.g_model_v2u2v],
-                                                      feed_dict={net.input_v: test_image_v})
+                if steps % save_every == 0:
+                    # save generated images on every epochs
+                    random_index = np.random.randint(0, val_data_loader.n_images)
+                    test_image_u, test_image_v = val_data_loader.get_image_by_index(random_index)
+                    fd_val = {
+                        net.input_u: test_image_u,
+                        net.input_v: test_image_v
+                    }
+                    g_loss_l1_u, g_image_u_to_v_to_u, g_image_u_to_v = \
+                        sess.run([net.g_loss_l1_u, net.g_model_u2v2u, net.g_model_u2v], feed_dict=fd_val)
+                    g_loss_l1_v, g_image_v_to_u_to_v, g_image_v_to_u = \
+                        sess.run([net.g_loss_l1_v, net.g_model_v2u2v, net.g_model_v2u], feed_dict=fd_val)
 
-                image_fn = './assets/{:s}/epoch_{:d}_{:d}_tf.png'.format(dataset_name, e, ii)
-                helper.save_result(image_fn,
-                                   test_image_u, g_image_u2v, g_image_u2v2u,
-                                   test_image_v, g_image_v2u, g_image_v2u2v)
+                    image_fn = './assets/{:s}/epoch_{:d}-{:d}_tf.png'.format(dataset_name, e, steps)
+                    helper.save_result(image_fn,
+                                       test_image_u, g_image_u_to_v, g_image_u_to_v_to_u,
+                                       test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
 
         ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
         saver.save(sess, ckpt_fn)
 
     return losses
 
-def test(net, dataset_name, data_loader):
+def test(net, dataset_name, val_data_loader):
     ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
     saver = tf.train.Saver()
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         saver.restore(sess, ckpt_fn)
 
-        for ii in range(data_loader.n_images):
-            test_image_u, test_image_v = data_loader.get_image_by_index(ii)
+        # run on u set
+        for ii in range(val_data_loader.n_images):
+            test_image_u = val_data_loader.get_image_by_index_u(ii)
 
-            g_image_u2v, g_image_u2v2u = sess.run([net.g_model_u2v, net.g_model_u2v2u],
-                                                  feed_dict={net.input_u: test_image_u})
-            g_image_v2u, g_image_v2u2v = sess.run([net.g_model_v2u, net.g_model_v2u2v],
-                                                  feed_dict={net.input_v: test_image_v})
+            g_image_u_to_v, g_image_u_to_v_to_u = sess.run([net.g_model_u2v, net.g_model_u2v2u],
+                                                           feed_dict={net.input_u: test_image_u})
 
-            image_fn = './assets/{:s}/{:s}_result_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
-            helper.save_result(image_fn,
-                               test_image_u, g_image_u2v, g_image_u2v2u,
-                               test_image_v, g_image_v2u, g_image_v2u2v)
+            image_fn = './assets/{:s}/{:s}_result_u_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
+            helper.save_result_single_row(image_fn, test_image_u, g_image_u_to_v, g_image_u_to_v_to_u)
+
+        # run on v set
+        for ii in range(val_data_loader.n_images):
+            test_image_v = val_data_loader.get_image_by_index_v(ii)
+            g_image_v_to_u, g_image_v_to_u_to_v = sess.run([net.g_model_v2u, net.g_model_v2u2v],
+                                                           feed_dict={net.input_v: test_image_v})
+
+            image_fn = './assets/{:s}/{:s}_result_v_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
+            helper.save_result_single_row(image_fn, test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
 
 def main():
     # prepare directories
@@ -363,8 +377,7 @@ def main():
     for param in parameter_set:
         fn_ext = param['file_extension']
         dataset_name = param['dataset_name']
-        dataset_dir_u = param['dataset_dir_u']
-        dataset_dir_v = param['dataset_dir_v']
+        dataset_base_dir = param['dataset_base_dir']
         epochs = param['epochs']
         batch_size = param['batch_size']
         im_size = param['im_size']
@@ -377,17 +390,25 @@ def main():
         if not os.path.isdir(current_assets_dir):
             os.mkdir(current_assets_dir)
 
+        # set dataset folders
+        train_dataset_dir_u = dataset_base_dir + '{:s}/train/A/'.format(dataset_name)
+        train_dataset_dir_v = dataset_base_dir + '{:s}/train/B/'.format(dataset_name)
+        val_dataset_dir_u = dataset_base_dir + '{:s}/val/A/'.format(dataset_name)
+        val_dataset_dir_v = dataset_base_dir + '{:s}/val/B/'.format(dataset_name)
+
         # prepare network
         net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
 
         if not is_test:
-            # load train datasets
-            train_data_loader = helper.Dataset(dataset_dir_u, dataset_dir_v, fn_ext,
+            # load train & validation datasets
+            train_data_loader = helper.Dataset(train_dataset_dir_u, train_dataset_dir_v, fn_ext,
                                                im_size, im_channel, im_channel, do_flip=do_flip, do_shuffle=True)
+            val_data_loader = helper.Dataset(val_dataset_dir_u, val_dataset_dir_v, fn_ext,
+                                             im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
 
             # start training
             start_time = time.time()
-            losses = train(net, dataset_name, train_data_loader, epochs, batch_size)
+            losses = train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size)
             end_time = time.time()
             total_time = end_time - start_time
             test_result_str = '[Training]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}\n'.format(
@@ -399,7 +420,7 @@ def main():
 
         else:
             # load train datasets
-            val_data_loader = helper.Dataset(dataset_dir_u, dataset_dir_v, fn_ext,
+            val_data_loader = helper.Dataset(val_dataset_dir_u, val_dataset_dir_v, fn_ext,
                                              im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
 
             # validation
@@ -420,4 +441,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-

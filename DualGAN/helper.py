@@ -34,6 +34,18 @@ def save_result(image_fn,
     else:
         toimage(concated, mode='RGB').save(image_fn)
 
+def save_result_single_row(image_fn, real_image_u, g_image_one_path, g_image_two_path):
+    im_0 = preprocess_for_saving_image(real_image_u)
+    im_1 = preprocess_for_saving_image(g_image_one_path)
+    im_2 = preprocess_for_saving_image(g_image_two_path)
+    concated = np.concatenate((im_0, im_1, im_2), axis=1)
+
+    if concated.shape[2] == 1:
+        reshaped = np.squeeze(concated, axis=2)
+        toimage(reshaped, mode='L').save(image_fn)
+    else:
+        toimage(concated, mode='RGB').save(image_fn)
+
 
 
 # class for loading images
@@ -79,6 +91,22 @@ class Dataset(object):
         image_u = self.load_image(fn_u, self.color_mode_u)
         image_v = self.load_image(fn_v, self.color_mode_v)
         return image_u, image_v
+
+    def get_image_by_index_u(self, index):
+        if index >= self.n_images:
+            index = 0
+
+        fn_u = [self.image_files_u[index]]
+        image_u = self.load_image(fn_u, self.color_mode_u)
+        return image_u
+
+    def get_image_by_index_v(self, index):
+        if index >= self.n_images:
+            index = 0
+
+        fn_v = [self.image_files_v[index]]
+        image_v = self.load_image(fn_v, self.color_mode_v)
+        return image_v
 
     def get_next_batch(self, batch_size):
         if (self.batch_index + batch_size) > self.n_images:
