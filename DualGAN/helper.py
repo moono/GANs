@@ -10,7 +10,8 @@ def preprocess_for_saving_image(im):
         im = np.squeeze(im, axis=0)
 
     # Scale to 0-255
-    im = (((im - im.min()) * 255) / (im.max() - im.min())).astype(np.uint8)
+    #im = (((im - im.min()) * 255) / (im.max() - im.min())).astype(np.uint8)
+    im = ((im + 1.0) * 127.5).astype(np.uint8)
 
     return im
 
@@ -73,6 +74,7 @@ class Dataset(object):
         self.color_mode_v = 'L' if im_channel_v == 1 else 'RGB'
         self.do_flip = do_flip
         self.image_max_value = 255
+        self.image_max_value_half = 127.5
         # self.prng = np.random.RandomState(777)
 
     def reset(self):
@@ -138,7 +140,8 @@ class Dataset(object):
                 im = np.flip(im, axis=1)
 
             # normalize input [0 ~ 255] ==> [-1 ~ 1]
-            im = (im / self.image_max_value - 0.5) * 2
+            #im = (im / self.image_max_value - 0.5) * 2
+            im = im / self.image_max_value_half - 1.0
 
             # make 3 dimensional for single channel image
             if len(im.shape) < 3:
