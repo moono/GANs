@@ -42,58 +42,19 @@ class DualGAN(object):
         self.gen_BA_out = self.generator(self.gen_A_postfix, self.gen_B_out, self.channel_v, reuse=True)
 
         # discriminator outputs
-        self.dis_A_real_out, self.dis_A_real_logits = self.discriminator(self.dis_A_postfix, self.input_v, reuse=False)
-        self.dis_A_fake_out, self.dis_A_fake_logits = self.discriminator(self.dis_A_postfix, self.gen_A_out, reuse=True)
-        self.dis_B_real_out, self.dis_B_real_logits = self.discriminator(self.dis_B_postfix, self.input_u, reuse=False)
-        self.dis_B_fake_out, self.dis_B_fake_logits = self.discriminator(self.dis_B_postfix, self.gen_B_out, reuse=True)
+        self.dis_A_real_logits = self.discriminator(self.dis_A_postfix, self.input_v, reuse=False)
+        self.dis_A_fake_logits = self.discriminator(self.dis_A_postfix, self.gen_A_out, reuse=True)
+        self.dis_B_real_logits = self.discriminator(self.dis_B_postfix, self.input_u, reuse=False)
+        self.dis_B_fake_logits = self.discriminator(self.dis_B_postfix, self.gen_B_out, reuse=True)
 
-        # discriminator losses
-        self.dis_A_real_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_A_real_logits,
-                                                    labels=tf.ones_like(self.dis_A_real_out)))
-        self.dis_A_fake_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_A_fake_logits,
-                                                    labels=tf.zeros_like(self.dis_A_fake_out)))
-        self.dis_B_real_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_B_real_logits,
-                                                    labels=tf.ones_like(self.dis_B_real_out)))
-        self.dis_B_fake_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_B_fake_logits,
-                                                    labels=tf.zeros_like(self.dis_B_fake_out)))
-        self.d_loss = self.dis_A_real_loss + self.dis_A_fake_loss + self.dis_B_real_loss + self.dis_B_fake_loss
-
-        # generator losses
-        self.gen_A_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_A_fake_logits,
-                                                    labels=tf.ones_like(self.dis_A_fake_out)))
-        self.gen_B_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_B_fake_logits,
-                                                    labels=tf.ones_like(self.dis_B_fake_out)))
-        self.gen_A_l1_loss = tf.reduce_mean(tf.abs(self.gen_AB_out - self.input_u))
-        self.gen_B_l1_loss = tf.reduce_mean(tf.abs(self.gen_BA_out - self.input_v))
-        self.g_loss = self.gen_A_loss + self.gen_B_loss + \
-                      (self.lambda_u * self.gen_A_l1_loss) + (self.lambda_v * self.gen_B_l1_loss)
-
-        # optimizers
-        # Get weights and bias to update
-        t_vars = tf.trainable_variables()
-        # self.d_vars = [var for var in t_vars if var.name.startswith('discriminator')]
-        # self.g_vars = [var for var in t_vars if var.name.startswith('generator')]
-        u_d_vars = [var for var in t_vars if self.dis_A_postfix in var.name]
-        v_d_vars = [var for var in t_vars if self.dis_B_postfix in var.name]
-        u_g_vars = [var for var in t_vars if self.gen_A_postfix in var.name]
-        v_g_vars = [var for var in t_vars if self.gen_B_postfix in var.name]
-        self.d_vars = u_d_vars + v_d_vars
-        self.g_vars = u_g_vars + v_g_vars
-
-        print(len(self.d_vars))
-        print(len(self.g_vars))
+        # losses
+        self.gen_A_l1_loss, self.gen_B_l1_loss, self.d_loss, self.g_loss = \
+            self.model_loss(self.input_u, self.input_v, self.gen_AB_out, self.gen_BA_out,
+                            self.dis_A_real_logits, self.dis_A_fake_logits,
+                            self.dis_B_real_logits, self.dis_B_fake_logits)
 
         # Optimizers
-        self.d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).\
-            minimize(self.d_loss, var_list=self.d_vars)
-        self.g_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay). \
-            minimize(self.g_loss, var_list=self.g_vars)
+        self.d_vars, self.g_vars, self.d_train_opt, self.g_train_opt = self.model_opt(self.d_loss, self.g_loss)
 
 
     def generator(self, scope_name, inputs, out_channel, reuse=False, is_training=True):
@@ -102,7 +63,6 @@ class DualGAN(object):
             w_init_encoder = tf.truncated_normal_initializer(stddev=self.stddev)
             w_init_decoder = tf.random_normal_initializer(stddev=self.stddev)
             use_bias = True
-            b_init = tf.constant_initializer(0.0) if use_bias else None
 
             # prepare to stack layers to follow U-Net shape
             # inputs -> e1 -> e2 -> e3 -> e4 -> e5 -> e6 -> e7
@@ -117,7 +77,7 @@ class DualGAN(object):
             # encoders
             # make [batch size, 128, 128, 64]
             encoder1 = tf.layers.conv2d(inputs, filters=self.n_g_filter_start, kernel_size=5, strides=2, padding='same',
-                                        kernel_initializer=w_init_encoder, use_bias=use_bias, bias_initializer=b_init)
+                                        kernel_initializer=w_init_encoder, use_bias=use_bias)
             layers.append(encoder1)
 
             encoder_spec = [
@@ -133,7 +93,7 @@ class DualGAN(object):
             for ii, n_filters in enumerate(encoder_spec):
                 prev_activated = tf.maximum(self.alpha * layers[-1], layers[-1])
                 encoder = tf.layers.conv2d(prev_activated, filters=n_filters, kernel_size=5, strides=2, padding='same',
-                                           kernel_initializer=w_init_encoder, use_bias=use_bias, bias_initializer=b_init)
+                                           kernel_initializer=w_init_encoder, use_bias=use_bias)
                 encoder = tf.layers.batch_normalization(inputs=encoder, training=is_training)
                 layers.append(encoder)
 
@@ -153,13 +113,13 @@ class DualGAN(object):
                 prev_activated = tf.nn.relu(layers[-1])
                 decoder = tf.layers.conv2d_transpose(inputs=prev_activated, filters=n_filters, kernel_size=5, strides=2,
                                                      padding='same', kernel_initializer=w_init_decoder,
-                                                     use_bias=use_bias, bias_initializer=b_init)
+                                                     use_bias=use_bias)
                 decoder = tf.layers.batch_normalization(inputs=decoder, training=is_training)
 
                 # handle dropout (use dropout at training & inference)
                 if dropout_rate > 0.0:
-                    decoder = tf.layers.dropout(decoder, rate=dropout_rate)
-                    # decoder = tf.layers.dropout(decoder, rate=dropout_rate, training=True)
+                    # decoder = tf.layers.dropout(decoder, rate=dropout_rate)
+                    decoder = tf.layers.dropout(decoder, rate=dropout_rate, training=True)
 
                 # handle skip layer
                 skip_layer_index = num_encoder_layers - decoder_layer - 2
@@ -171,7 +131,7 @@ class DualGAN(object):
             # make [batch size, 256, 256, out_channel]
             decoder8 = tf.layers.conv2d_transpose(inputs=decoder7, filters=out_channel, kernel_size=5, strides=2,
                                                   padding='same', kernel_initializer=w_init_decoder,
-                                                  use_bias=use_bias, bias_initializer=b_init)
+                                                  use_bias=use_bias)
             out = tf.tanh(decoder8)
             return out
 
@@ -180,40 +140,83 @@ class DualGAN(object):
         with tf.variable_scope(variable_scope_name, reuse=reuse):
             w_init = tf.truncated_normal_initializer(stddev=self.stddev)
             use_bias = True
-            b_init = tf.constant_initializer(0.0) if use_bias else None
 
             # expected inputs shape: [batch size, 256, 256, input_channel]
             # layer_1: [batch, 256, 256, input_channel] => [batch, 128, 128, 64], without batchnorm
             l1 = tf.layers.conv2d(inputs, filters=self.n_d_filter_start, kernel_size=5, strides=2, padding='same',
-                                  kernel_initializer=w_init, use_bias=use_bias, bias_initializer=b_init)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l1 = tf.maximum(self.alpha * l1, l1)
 
             # layer_2: [batch, 128, 128, 64] => [batch, 64, 64, 128], with batchnorm
             l2 = tf.layers.conv2d(l1, filters=self.n_d_filter_start * 2, kernel_size=5, strides=2, padding='same',
-                                  kernel_initializer=w_init, use_bias=use_bias, bias_initializer=b_init)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l2 = tf.layers.batch_normalization(inputs=l2, training=is_training)
             l2 = tf.maximum(self.alpha * l2, l2)
 
             # layer_3: [batch, 64, 64, 128] => [batch, 32, 32, 256], with batchnorm
             l3 = tf.layers.conv2d(l2, filters=self.n_d_filter_start * 4, kernel_size=5, strides=2, padding='same',
-                                  kernel_initializer=w_init, use_bias=use_bias, bias_initializer=b_init)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l3 = tf.layers.batch_normalization(inputs=l3, training=is_training)
             l3 = tf.maximum(self.alpha * l3, l3)
 
             # layer_4: [batch, 32, 32, 256] => [batch, 32, 32, 512], with batchnorm
             l4 = tf.layers.conv2d(l3, filters=self.n_d_filter_start * 8, kernel_size=5, strides=1, padding='same',
-                                  kernel_initializer=w_init, use_bias=use_bias, bias_initializer=b_init)
+                                  kernel_initializer=w_init, use_bias=use_bias)
             l4 = tf.layers.batch_normalization(inputs=l4, training=is_training)
             l4 = tf.maximum(self.alpha * l4, l4)
 
             logits = tf.layers.conv2d(l4, filters=1, kernel_size=5, strides=1, padding='same',
-                                      kernel_initializer=w_init, use_bias=use_bias, bias_initializer=b_init)
-            out = tf.sigmoid(logits)
+                                      kernel_initializer=w_init, use_bias=use_bias)
+            # out = tf.sigmoid(logits)
 
-            return out, logits
+            return logits
+
+    def model_loss(self, input_u, input_v, gen_AB_out, gen_BA_out,
+                   dis_A_real_logits, dis_A_fake_logits, dis_B_real_logits, dis_B_fake_logits):
+        # shorten cross entropy loss calculation
+        def celoss_ones(logits):
+            return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.ones_like(logits)))
+
+        def celoss_zeros(logits):
+            return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.zeros_like(logits)))
+
+        # discriminator losses
+        dis_A_real_loss = celoss_ones(dis_A_real_logits)
+        dis_A_fake_loss = celoss_zeros(dis_A_fake_logits)
+        dis_B_real_loss = celoss_ones(dis_B_real_logits)
+        dis_B_fake_loss = celoss_zeros(dis_B_fake_logits)
+        d_loss_A = dis_A_real_loss + dis_A_fake_loss
+        d_loss_B = dis_B_real_loss + dis_B_fake_loss
+        d_loss = d_loss_A + d_loss_B
+
+        # generator losses
+        gen_A_loss = celoss_ones(dis_A_fake_logits)
+        gen_B_loss = celoss_ones(dis_B_fake_logits)
+        gen_A_l1_loss = tf.reduce_mean(tf.abs(input_u - gen_AB_out))
+        gen_B_l1_loss = tf.reduce_mean(tf.abs(input_v - gen_BA_out))
+
+        g_loss_A = gen_A_loss + self.lambda_v * gen_B_l1_loss
+        g_loss_B = gen_B_loss + self.lambda_u * gen_A_l1_loss
+        g_loss = g_loss_A + g_loss_B
+
+        return gen_A_l1_loss, gen_B_l1_loss, d_loss, g_loss
+
+    def model_opt(self, d_loss, g_loss):
+        # Get weights and bias to update
+        t_vars = tf.trainable_variables()
+        d_vars = [var for var in t_vars if var.name.startswith('discriminator')]
+        g_vars = [var for var in t_vars if var.name.startswith('generator')]
+
+        print(len(d_vars))
+        print(len(g_vars))
+
+        # Optimizers
+        d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).minimize(d_loss, var_list=d_vars)
+        g_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).minimize(g_loss, var_list=g_vars)
+
+        return d_vars, g_vars, d_train_opt, g_train_opt
 
 def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size, print_every=30, save_every=100):
-    losses = []
     steps = 0
 
     # prepare saver for saving trained model
@@ -245,12 +248,14 @@ def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_s
                     # At the end of each epoch, get the losses and print them out
                     train_loss_d = net.d_loss.eval(fd)
                     train_loss_g = net.g_loss.eval(fd)
+                    train_loss_A_l1 = net.gen_A_l1_loss.eval(fd)
+                    train_loss_B_l1 = net.gen_B_l1_loss.eval(fd)
 
                     print("Epoch {}/{}...".format(e + 1, epochs),
                           "Discriminator Loss: {:.4f}...".format(train_loss_d),
-                          "Generator Loss: {:.4f}".format(train_loss_g))
-                    # Save losses to view after training
-                    losses.append((train_loss_d, train_loss_g))
+                          "Generator Loss: {:.4f}".format(train_loss_g),
+                          "A-L1 Loss: {:.4f}".format(train_loss_A_l1),
+                          "B-L1 Loss: {:.4f}".format(train_loss_B_l1))
 
                 if steps % save_every == 0:
                     # save generated images on every epochs
@@ -267,7 +272,7 @@ def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_s
         ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
         saver.save(sess, ckpt_fn)
 
-    return losses
+    return
 
 def test(net, dataset_name, val_data_loader):
     ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
@@ -335,7 +340,7 @@ def main():
 
             # start training
             start_time = time.time()
-            losses = train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size)
+            train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size)
             end_time = time.time()
             total_time = end_time - start_time
             test_result_str = '[Training]: Data: {:s}, Epochs: {:3f}, Batch_size: {:2d}, Elapsed time: {:3f}\n'.format(

@@ -36,7 +36,7 @@ class DualGAN(object):
         self.dis_B_name = 'dis_B'
 
         # generator outputs
-        w_init = tf.contrib.xavier_initializer()
+        w_init = tf.contrib.layers.xavier_initializer()
         self.gen_A_out = ops.generator_unet_256(self.input_u, self.n_filter_start, self.channel_v,
                                                 scope_name=self.gen_A_name, w_init_encoder=w_init,
                                                 w_init_decoder=w_init, reuse=False)
@@ -60,51 +60,51 @@ class DualGAN(object):
         self.dis_B_fake_logits = ops.discriminator_unet_256(self.gen_B_out, self.n_filter_start,
                                                             scope_name=self.dis_B_name, w_init=w_init, reuse=True)
 
+        # shorten cross entropy loss
+        def celoss_ones(logits):
+            return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.ones_like(logits)))
+        def celoss_zeros(logits):
+            return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.zeros_like(logits)))
+
         # discriminator losses
-        self.dis_A_real_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_A_real_logits,
-                                                    labels=tf.ones_like(self.dis_A_real_logits)))
-        self.dis_A_fake_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_A_fake_logits,
-                                                    labels=tf.zeros_like(self.dis_A_fake_logits)))
-        self.dis_B_real_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_B_real_logits,
-                                                    labels=tf.ones_like(self.dis_B_real_logits)))
-        self.dis_B_fake_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_B_fake_logits,
-                                                    labels=tf.zeros_like(self.dis_B_fake_logits)))
-        self.d_loss = self.dis_A_real_loss + self.dis_A_fake_loss + self.dis_B_real_loss + self.dis_B_fake_loss
+        self.dis_A_real_loss = celoss_ones(self.dis_A_real_logits)
+        self.dis_A_fake_loss = celoss_zeros(self.dis_A_fake_logits)
+        self.dis_B_real_loss = celoss_ones(self.dis_B_real_logits)
+        self.dis_B_fake_loss = celoss_zeros(self.dis_B_fake_logits)
+        self.d_loss_A = self.dis_A_real_loss + self.dis_A_fake_loss
+        self.d_loss_B = self.dis_B_real_loss + self.dis_B_fake_loss
+        self.d_loss = self.d_loss_A + self.d_loss_B
 
         # generator losses
-        self.gen_A_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_A_fake_logits,
-                                                    labels=tf.ones_like(self.dis_A_fake_logits)))
-        self.gen_B_loss = tf.reduce_mean(
-            tf.nn.sigmoid_cross_entropy_with_logits(logits=self.dis_B_fake_logits,
-                                                    labels=tf.ones_like(self.dis_B_fake_logits)))
-        self.gen_A_l1_loss = tf.reduce_mean(tf.abs(self.gen_AB_out - self.input_u))
-        self.gen_B_l1_loss = tf.reduce_mean(tf.abs(self.gen_BA_out - self.input_v))
-        self.g_loss = self.gen_A_loss + self.gen_B_loss + \
-                      (self.lambda_u * self.gen_A_l1_loss) + (self.lambda_v * self.gen_B_l1_loss)
+        self.gen_A_loss = celoss_ones(self.dis_A_fake_logits)
+        self.gen_B_loss = celoss_ones(self.dis_B_fake_logits)
+        self.gen_A_l1_loss = tf.reduce_mean(tf.abs(self.input_u - self.gen_AB_out))
+        self.gen_B_l1_loss = tf.reduce_mean(tf.abs(self.input_v - self.gen_BA_out))
+
+        self.g_loss_A = self.gen_A_loss + self.lambda_v * self.gen_B_l1_loss
+        self.g_loss_B = self.gen_B_loss + self.lambda_u * self.gen_A_l1_loss
+        self.g_loss = self.g_loss_A + self.g_loss_B
 
         # optimizers
         # Get weights and bias to update
         t_vars = tf.trainable_variables()
-        u_d_vars = [var for var in t_vars if self.dis_A_name in var.name]
-        v_d_vars = [var for var in t_vars if self.dis_B_name in var.name]
-        u_g_vars = [var for var in t_vars if self.gen_A_name in var.name]
-        v_g_vars = [var for var in t_vars if self.gen_B_name in var.name]
-        self.d_vars = u_d_vars + v_d_vars
-        self.g_vars = u_g_vars + v_g_vars
+        self.A_d_vars = [var for var in t_vars if self.dis_A_name in var.name]
+        self.B_d_vars = [var for var in t_vars if self.dis_B_name in var.name]
+        self.A_g_vars = [var for var in t_vars if self.gen_A_name in var.name]
+        self.B_g_vars = [var for var in t_vars if self.gen_B_name in var.name]
+        # self.d_vars = self.A_d_vars + self.B_d_vars
+        self.g_vars = self.A_g_vars + self.B_g_vars
 
-        print(len(self.d_vars))
-        print(len(self.g_vars))
+        # print(len(self.d_vars))
+        # print(len(self.g_vars))
 
         # Optimizers
-        self.d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).\
-            minimize(self.d_loss, var_list=self.d_vars)
+        # self.d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).\
+        #     minimize(self.d_loss, var_list=self.d_vars)
         self.g_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay). \
             minimize(self.g_loss, var_list=self.g_vars)
+        self.A_d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).minimize(self.d_loss_A, var_list=self.A_d_vars)
+        self.B_d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate, decay=self.decay).minimize(self.d_loss_B, var_list=self.B_d_vars)
 
 def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size, print_every=30, save_every=100):
     losses = []
@@ -131,9 +131,9 @@ def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_s
                     net.input_v: batch_image_v
                 }
 
-                _ = sess.run(net.d_train_opt, feed_dict=fd)
-                _ = sess.run(net.g_train_opt, feed_dict=fd)
-                _ = sess.run(net.g_train_opt, feed_dict=fd)
+                _, __ = sess.run([net.A_d_train_opt, net.B_d_train_opt], feed_dict=fd)
+                _ = sess.run([net.g_train_opt], feed_dict=fd)
+                _ = sess.run([net.g_train_opt], feed_dict=fd)
 
                 if steps % print_every == 0:
                     # At the end of each epoch, get the losses and print them out
