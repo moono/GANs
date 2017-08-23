@@ -120,6 +120,8 @@ class Dataset(object):
         images_u = self.load_image(batch_files_u, self.color_mode_u)
         images_v = self.load_image(batch_files_v, self.color_mode_v)
 
+        self.batch_index += batch_size
+
         return images_u, images_v
 
     def load_image(self, fn_list, color_mode):
@@ -127,17 +129,17 @@ class Dataset(object):
         for fn in fn_list:
             # open images with PIL
             im = Image.open(fn)
-            im = np.array(im.convert(color_mode)).astype(np.float32)
+            im = np.array(im.convert(color_mode))
 
             # resize
-            if im.shape[0] is not self.resize_to or im.shape[1] is not self.resize_to:
-                im = imresize(im, [self.resize_to, self.resize_to])
+            im = imresize(im, [self.resize_to, self.resize_to])
 
             # perform flip if needed
             # random_val = self.prng.uniform(0, 1)
             random_val = np.random.random()
             if self.do_flip and random_val > 0.5:
-                im = np.flip(im, axis=1)
+                #im = np.flip(im, axis=1)
+                im = np.fliplr(im)
 
             # normalize input [0 ~ 255] ==> [-1 ~ 1]
             #im = (im / self.image_max_value - 0.5) * 2
