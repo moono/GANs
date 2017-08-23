@@ -35,7 +35,7 @@ def conv2d(input_, output_dim,
 
 def deconv2d(input_, output_shape,
              k_h=5, k_w=5, d_h=2, d_w=2, stddev=0.02,
-             name="deconv2d"):
+             name="deconv2d", with_w=False):
     with tf.variable_scope(name):
         # filter : [height, width, output_channels, in_channels]
         w = tf.get_variable('w', [k_h, k_w, output_shape[-1], input_.get_shape()[-1]],
@@ -48,213 +48,238 @@ def deconv2d(input_, output_shape,
         desired_shape[0] = 1
         deconv = tf.reshape(tf.nn.bias_add(deconv, biases), desired_shape)
 
-        return deconv
+        if with_w:
+            return deconv, w, biases
+        else:
+            return deconv
 
 def lrelu(x, leak=0.2, name="lrelu"):
     return tf.maximum(x, leak*x)
 
-def generator(postfix, inputs, out_channel, n_filter_start, alpha=0.2, stddev=0.02, reuse=False, is_training=True):
-    scope_name = 'generator-{:s}'.format(postfix)
-    with tf.variable_scope(scope_name, reuse=reuse):
-        s = inputs.get_shape().as_list()[1]
-        s2, s4, s8, s16, s32, s64, s128 = int(s / 2), int(s / 4), int(s / 8), int(s / 16), int(s / 32), int(
-            s / 64), int(s / 128)
+def celoss(logits, labels):
+    return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels))
 
-        # imgs is (256 x 256 x input_c_dim)
-        e1 = conv2d(inputs, n_filter_start, name=postfix + 'e1_conv')
-        # e1 is (128 x 128 x n_filter_start)
-        e2 = batch_norm(conv2d(lrelu(e1), n_filter_start * 2, name=postfix + 'e2_conv'), name=postfix + 'bn_e2')
-        # e2 is (64 x 64 x n_filter_start*2)
-        e3 = batch_norm(conv2d(lrelu(e2), n_filter_start * 4, name=postfix + 'e3_conv'), name=postfix + 'bn_e3')
-        # e3 is (32 x 32 x n_filter_start*4)
-        e4 = batch_norm(conv2d(lrelu(e3), n_filter_start * 8, name=postfix + 'e4_conv'), name=postfix + 'bn_e4')
-        # e4 is (16 x 16 x n_filter_start*8)
-        e5 = batch_norm(conv2d(lrelu(e4), n_filter_start * 8, name=postfix + 'e5_conv'), name=postfix + 'bn_e5')
-        # e5 is (8 x 8 x n_filter_start*8)
-        e6 = batch_norm(conv2d(lrelu(e5), n_filter_start * 8, name=postfix + 'e6_conv'), name=postfix + 'bn_e6')
-        # e6 is (4 x 4 x n_filter_start*8)
-        e7 = batch_norm(conv2d(lrelu(e6), n_filter_start * 8, name=postfix + 'e7_conv'), name=postfix + 'bn_e7')
-        # e7 is (2 x 2 x n_filter_start*8)
-        e8 = batch_norm(conv2d(lrelu(e7), n_filter_start * 8, name=postfix + 'e8_conv'), name=postfix + 'bn_e8')
-        # e8 is (1 x 1 x n_filter_start*8)
+class DualNet(object):
+    def __init__(self, image_size=256, batch_size=1, fcn_filter_dim=64,
+                 A_channels=3, B_channels=3, dataset_name='facades',
+                 lambda_A=20., lambda_B=20., loss_metric='L1'):
+        self.df_dim = fcn_filter_dim
+        # self.flip = flip
+        self.lambda_A = lambda_A
+        self.lambda_B = lambda_B
 
-        d1 = deconv2d(tf.nn.relu(e8), [1, s128, s128, n_filter_start * 8], name=postfix + 'd1')
-        d1 = tf.nn.dropout(batch_norm(d1, name=postfix + 'bn_d1'), 0.5)
-        d1 = tf.concat([d1, e7], 3)
-        # d1 is (2 x 2 x n_filter_start*8*2)
+        # self.sess = sess
+        # self.is_grayscale_A = (A_channels == 1)
+        # self.is_grayscale_B = (B_channels == 1)
+        self.batch_size = batch_size
+        self.image_size = image_size
+        self.fcn_filter_dim = fcn_filter_dim
+        self.A_channels = A_channels
+        self.B_channels = B_channels
+        self.loss_metric = loss_metric
 
-        d2 = deconv2d(tf.nn.relu(d1), [1, s64, s64, n_filter_start * 8], name=postfix + 'd2')
-        d2 = tf.nn.dropout(batch_norm(d2, name=postfix + 'bn_d2'), 0.5)
+        self.dataset_name = dataset_name
+        # self.checkpoint_dir = checkpoint_dir
 
-        d2 = tf.concat([d2, e6], 3)
-        # d2 is (4 x 4 x n_filter_start*8*2)
+        # # directory name for output and logs saving
+        # self.dir_name = "%s-img_sz_%s-fltr_dim_%d-%s-lambda_AB_%s_%s" % (
+        #     self.dataset_name,
+        #     self.image_size,
+        #     self.fcn_filter_dim,
+        #     self.loss_metric,
+        #     self.lambda_A,
+        #     self.lambda_B
+        # )
+        self.build_model()
 
-        d3 = deconv2d(tf.nn.relu(d2), [1, s32, s32, n_filter_start * 8], name=postfix + 'd3')
-        d3 = tf.nn.dropout(batch_norm(d3, name=postfix + 'bn_d3'), 0.5)
+    def build_model(self):
+        ###    define place holders
+        self.real_A = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size,
+                                                  self.A_channels], name='real_A')
+        self.real_B = tf.placeholder(tf.float32, [self.batch_size, self.image_size, self.image_size,
+                                                  self.B_channels], name='real_B')
 
-        d3 = tf.concat([d3, e5], 3)
-        # d3 is (8 x 8 x n_filter_start*8*2)
+        ###  define graphs
+        self.A2B = self.A_g_net(self.real_A, reuse=False)
+        self.B2A = self.B_g_net(self.real_B, reuse=False)
+        self.A2B2A = self.B_g_net(self.A2B, reuse=True)
+        self.B2A2B = self.A_g_net(self.B2A, reuse=True)
 
-        d4 = deconv2d(tf.nn.relu(d3), [1, s16, s16, n_filter_start * 8], name=postfix + 'd4')
-        d4 = batch_norm(d4, name=postfix + 'bn_d4')
+        if self.loss_metric == 'L1':
+            self.A_loss = tf.reduce_mean(tf.abs(self.A2B2A - self.real_A))
+            self.B_loss = tf.reduce_mean(tf.abs(self.B2A2B - self.real_B))
+        elif self.loss_metric == 'L2':
+            self.A_loss = tf.reduce_mean(tf.square(self.A2B2A - self.real_A))
+            self.B_loss = tf.reduce_mean(tf.square(self.B2A2B - self.real_B))
 
-        d4 = tf.concat([d4, e4], 3)
-        # d4 is (16 x 16 x n_filter_start*8*2)
+        self.Ad_logits_fake = self.A_d_net(self.A2B, reuse=False)
+        self.Ad_logits_real = self.A_d_net(self.real_B, reuse=True)
+        self.Ad_loss_real = celoss(self.Ad_logits_real, tf.ones_like(self.Ad_logits_real))
+        self.Ad_loss_fake = celoss(self.Ad_logits_fake, tf.zeros_like(self.Ad_logits_fake))
+        self.Ad_loss = self.Ad_loss_fake + self.Ad_loss_real
+        self.Ag_loss = celoss(self.Ad_logits_fake, labels=tf.ones_like(self.Ad_logits_fake)) + self.lambda_B * (self.B_loss)
 
-        d5 = deconv2d(tf.nn.relu(d4), [1, s8, s8, n_filter_start * 4], name=postfix + 'd5')
-        d5 = batch_norm(d5, name=postfix + 'bn_d5')
-        d5 = tf.concat([d5, e3], 3)
-        # d5 is (32 x 32 x n_filter_start*4*2)
+        self.Bd_logits_fake = self.B_d_net(self.B2A, reuse=False)
+        self.Bd_logits_real = self.B_d_net(self.real_A, reuse=True)
+        self.Bd_loss_real = celoss(self.Bd_logits_real, tf.ones_like(self.Bd_logits_real))
+        self.Bd_loss_fake = celoss(self.Bd_logits_fake, tf.zeros_like(self.Bd_logits_fake))
+        self.Bd_loss = self.Bd_loss_fake + self.Bd_loss_real
+        self.Bg_loss = celoss(self.Bd_logits_fake, tf.ones_like(self.Bd_logits_fake)) + self.lambda_A * (self.A_loss)
 
-        d6 = deconv2d(tf.nn.relu(d5), [1, s4, s4, n_filter_start * 2], name=postfix + 'd6')
-        d6 = batch_norm(d6, name=postfix + 'bn_d6')
-        d6 = tf.concat([d6, e2], 3)
-        # d6 is (64 x 64 x n_filter_start*2*2)
+        self.d_loss = self.Ad_loss + self.Bd_loss
+        self.g_loss = self.Ag_loss + self.Bg_loss
+        ## define trainable variables
+        t_vars = tf.trainable_variables()
+        self.A_d_vars = [var for var in t_vars if 'A_d_' in var.name]
+        self.B_d_vars = [var for var in t_vars if 'B_d_' in var.name]
+        self.A_g_vars = [var for var in t_vars if 'A_g_' in var.name]
+        self.B_g_vars = [var for var in t_vars if 'B_g_' in var.name]
+        self.d_vars = self.A_d_vars + self.B_d_vars
+        self.g_vars = self.A_g_vars + self.B_g_vars
 
-        d7 = deconv2d(tf.nn.relu(d6), [1, s2, s2, n_filter_start], name=postfix + 'd7')
-        d7 = batch_norm(d7, name=postfix + 'bn_d7')
-        d7 = tf.concat([d7, e1], 3)
-        # d7 is (128 x 128 x n_filter_start*1*2)
+        lr = 0.00005
+        decay = 0.9
+        self.d_optim = tf.train.RMSPropOptimizer(lr, decay=decay).minimize(self.d_loss, var_list=self.d_vars)
+        self.g_optim = tf.train.RMSPropOptimizer(lr, decay=decay).minimize(self.g_loss, var_list=self.g_vars)
 
-        d8 = deconv2d(tf.nn.relu(d7), [1, s, s, out_channel], name=postfix + 'd8')
-        # d8 is (256 x 256 x output_c_dim)
-        return tf.nn.tanh(d8)
+    def run_optim(self, sess, batch_A_imgs, batch_B_imgs, counter, start_time):
+        _, Adfake, Adreal, Bdfake, Bdreal, Ad, Bd = sess.run(
+            [self.d_optim, self.Ad_loss_fake, self.Ad_loss_real, self.Bd_loss_fake, self.Bd_loss_real, self.Ad_loss,
+             self.Bd_loss],
+            feed_dict={self.real_A: batch_A_imgs, self.real_B: batch_B_imgs})
+        _, Ag, Bg, Aloss, Bloss = sess.run(
+            [self.g_optim, self.Ag_loss, self.Bg_loss, self.A_loss, self.B_loss],
+            feed_dict={self.real_A: batch_A_imgs, self.real_B: batch_B_imgs})
 
-def discriminator(postfix, inputs, n_filter_start, alpha=0.2, stddev=0.02, reuse=False, is_training=True):
-    scope_name = 'discriminator-{:s}'.format(postfix)
-    with tf.variable_scope(scope_name, reuse=reuse):
-        h0 = lrelu(conv2d(inputs, n_filter_start, name=postfix + 'h0_conv'))
-        # h0 is (128 x 128 x self.df_dim)
-        h1 = lrelu(batch_norm(conv2d(h0, n_filter_start * 2, name=postfix + 'h1_conv'), name=postfix + 'bn1'))
-        # h1 is (64 x 64 x self.df_dim*2)
-        h2 = lrelu(batch_norm(conv2d(h1, n_filter_start * 4, name=postfix + 'h2_conv'), name=postfix + 'bn2'))
-        # h2 is (32x 32 x self.df_dim*4)
-        h3 = lrelu(batch_norm(conv2d(h2, n_filter_start * 8, d_h=1, d_w=1, name=postfix + 'h3_conv'), name=postfix + 'bn3'))
-        # h3 is (32 x 32 x self.df_dim*8)
-        h4 = conv2d(h3, 1, d_h=1, d_w=1, name=postfix + 'h4')
-        return h4
+        _, Ag, Bg, Aloss, Bloss = sess.run(
+            [self.g_optim, self.Ag_loss, self.Bg_loss, self.A_loss, self.B_loss],
+            feed_dict={self.real_A: batch_A_imgs, self.real_B: batch_B_imgs})
 
-def model_loss(input_u, input_v,
-               g_model_u2v2u, g_model_v2u2v,
-               d_model_u_fake_logits, d_model_u_real_logits, d_model_v_fake_logits, d_model_v_real_logits,
-               lambda_u, lambda_v):
-    # discriminator losses
-    d_loss_real_u = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_real_logits,
-                                                                           labels=tf.ones_like(d_model_u_real_logits)))
-    d_loss_fake_u = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_fake_logits,
-                                                                           labels=tf.zeros_like(d_model_u_fake_logits)))
-    d_loss_u = d_loss_real_u + d_loss_fake_u
+        print("time: %4.4f, Ad: %.2f, Ag: %.2f, Bd: %.2f, Bg: %.2f,  U_diff: %.5f, V_diff: %.5f" \
+              % (time.time() - start_time, Ad, Ag, Bd, Bg, Aloss, Bloss))
+        print("Ad_fake: %.2f, Ad_real: %.2f, Bd_fake: %.2f, Bg_real: %.2f" % (Adfake, Adreal, Bdfake, Bdreal))
 
-    d_loss_real_v = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_real_logits,
-                                                                           labels=tf.ones_like(d_model_v_real_logits)))
-    d_loss_fake_v = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_fake_logits,
-                                                                           labels=tf.zeros_like(d_model_v_fake_logits)))
-    d_loss_v = d_loss_real_v + d_loss_fake_v
+    def A_d_net(self, imgs, reuse=False):
+        return self.discriminator(imgs, prefix='A_d_', reuse=reuse)
 
-    # generator losses
-    g_loss_gan_u = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_u_fake_logits,
-                                                                          labels=tf.ones_like(d_model_u_fake_logits)))
-    g_loss_gan_v = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=d_model_v_fake_logits,
-                                                                          labels=tf.ones_like(d_model_v_fake_logits)))
-    # compute L1 loss of G
-    g_loss_l1_u = tf.reduce_mean(tf.abs(g_model_u2v2u - input_u))
-    g_loss_l1_v = tf.reduce_mean(tf.abs(g_model_v2u2v - input_v))
+    def B_d_net(self, imgs, reuse=False):
+        return self.discriminator(imgs, prefix='B_d_', reuse=reuse)
 
-    g_loss_u = g_loss_gan_u + lambda_v * g_loss_l1_v
-    g_loss_v = g_loss_gan_v + lambda_u * g_loss_l1_u
+    def discriminator(self, image, prefix='A_d_', reuse=False):
+        # image is 256 x 256 x (input_c_dim + output_c_dim)
+        with tf.variable_scope(tf.get_variable_scope()) as scope:
+            if reuse:
+                scope.reuse_variables()
+            else:
+                assert scope.reuse == False
 
-    d_loss = d_loss_u + d_loss_v
-    g_loss = g_loss_u + g_loss_v
+            h0 = lrelu(conv2d(image, self.df_dim, name=prefix + 'h0_conv'))
+            # h0 is (128 x 128 x self.df_dim)
+            h1 = lrelu(batch_norm(conv2d(h0, self.df_dim * 2, name=prefix + 'h1_conv'), name=prefix + 'bn1'))
+            # h1 is (64 x 64 x self.df_dim*2)
+            h2 = lrelu(batch_norm(conv2d(h1, self.df_dim * 4, name=prefix + 'h2_conv'), name=prefix + 'bn2'))
+            # h2 is (32x 32 x self.df_dim*4)
+            h3 = lrelu(
+                batch_norm(conv2d(h2, self.df_dim * 8, d_h=1, d_w=1, name=prefix + 'h3_conv'), name=prefix + 'bn3'))
+            # h3 is (32 x 32 x self.df_dim*8)
+            h4 = conv2d(h3, 1, d_h=1, d_w=1, name=prefix + 'h4')
+            return h4
 
-    return g_loss_l1_u, g_loss_l1_v, d_loss, g_loss
+    def A_g_net(self, imgs, reuse=False):
+        return self.fcn(imgs, prefix='A_g_', reuse=reuse)
 
-def model_opt(d_loss, g_loss, g_u2v_post_fix, g_v2u_post_fix, d_u_post_fix, d_v_post_fix, learning_rate):
-    # Get weights and bias to update
-    t_vars = tf.trainable_variables()
-    # d_vars = [var for var in t_vars if var.name.startswith('discriminator-')]
-    # g_vars = [var for var in t_vars if var.name.startswith('generator-')]
-    u_d_vars = [var for var in t_vars if d_u_post_fix in var.name]
-    v_d_vars = [var for var in t_vars if d_v_post_fix in var.name]
-    u_g_vars = [var for var in t_vars if g_u2v_post_fix in var.name]
-    v_g_vars = [var for var in t_vars if g_v2u_post_fix in var.name]
-    d_vars = u_d_vars + v_d_vars
-    g_vars = u_g_vars + v_g_vars
+    def B_g_net(self, imgs, reuse=False):
+        return self.fcn(imgs, prefix='B_g_', reuse=reuse)
 
-    print(len(d_vars))
-    print(len(g_vars))
+    def fcn(self, imgs, prefix=None, reuse=False):
+        with tf.variable_scope(tf.get_variable_scope()) as scope:
+            if reuse:
+                scope.reuse_variables()
+            else:
+                assert scope.reuse == False
 
-    # Optimize
-    decay = 0.9
-    d_train_opt = tf.train.RMSPropOptimizer(learning_rate, decay=decay).minimize(d_loss, var_list=d_vars)
-    g_train_opt = tf.train.RMSPropOptimizer(learning_rate, decay=decay).minimize(g_loss, var_list=g_vars)
-    # with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-    #     g_train_opt = tf.train.RMSPropOptimizer(learning_rate, decay=decay).minimize(g_loss, var_list=g_vars)
+            s = self.image_size
+            s2, s4, s8, s16, s32, s64, s128 = int(s / 2), int(s / 4), int(s / 8), int(s / 16), int(s / 32), int(
+                s / 64), int(s / 128)
 
-    return d_train_opt, g_train_opt
+            # imgs is (256 x 256 x input_c_dim)
+            e1 = conv2d(imgs, self.fcn_filter_dim, name=prefix + 'e1_conv')
+            # e1 is (128 x 128 x self.fcn_filter_dim)
+            e2 = batch_norm(conv2d(lrelu(e1), self.fcn_filter_dim * 2, name=prefix + 'e2_conv'), name=prefix + 'bn_e2')
+            # e2 is (64 x 64 x self.fcn_filter_dim*2)
+            e3 = batch_norm(conv2d(lrelu(e2), self.fcn_filter_dim * 4, name=prefix + 'e3_conv'), name=prefix + 'bn_e3')
+            # e3 is (32 x 32 x self.fcn_filter_dim*4)
+            e4 = batch_norm(conv2d(lrelu(e3), self.fcn_filter_dim * 8, name=prefix + 'e4_conv'), name=prefix + 'bn_e4')
+            # e4 is (16 x 16 x self.fcn_filter_dim*8)
+            e5 = batch_norm(conv2d(lrelu(e4), self.fcn_filter_dim * 8, name=prefix + 'e5_conv'), name=prefix + 'bn_e5')
+            # e5 is (8 x 8 x self.fcn_filter_dim*8)
+            e6 = batch_norm(conv2d(lrelu(e5), self.fcn_filter_dim * 8, name=prefix + 'e6_conv'), name=prefix + 'bn_e6')
+            # e6 is (4 x 4 x self.fcn_filter_dim*8)
+            e7 = batch_norm(conv2d(lrelu(e6), self.fcn_filter_dim * 8, name=prefix + 'e7_conv'), name=prefix + 'bn_e7')
+            # e7 is (2 x 2 x self.fcn_filter_dim*8)
+            e8 = batch_norm(conv2d(lrelu(e7), self.fcn_filter_dim * 8, name=prefix + 'e8_conv'), name=prefix + 'bn_e8')
+            # e8 is (1 x 1 x self.fcn_filter_dim*8)
 
-class DualGAN(object):
-    def __init__(self, im_size, im_channel_u, im_channel_v):
-        tf.reset_default_graph()
+            self.d1, self.d1_w, self.d1_b = deconv2d(tf.nn.relu(e8),
+                                                     [self.batch_size, s128, s128, self.fcn_filter_dim * 8],
+                                                     name=prefix + 'd1', with_w=True)
+            d1 = tf.nn.dropout(batch_norm(self.d1, name=prefix + 'bn_d1'), 0.5)
+            d1 = tf.concat([d1, e7], 3)
+            # d1 is (2 x 2 x self.fcn_filter_dim*8*2)
 
-        #
-        self.im_size, self.channel_u, self.channel_v = im_size, im_channel_u, im_channel_v
+            self.d2, self.d2_w, self.d2_b = deconv2d(tf.nn.relu(d1),
+                                                     [self.batch_size, s64, s64, self.fcn_filter_dim * 8],
+                                                     name=prefix + 'd2', with_w=True)
+            d2 = tf.nn.dropout(batch_norm(self.d2, name=prefix + 'bn_d2'), 0.5)
 
-        self.n_g_filter_start = 64
-        self.n_d_filter_start = 64
-        self.alpha = 0.2
-        self.stddev = 0.02
+            d2 = tf.concat([d2, e6], 3)
+            # d2 is (4 x 4 x self.fcn_filter_dim*8*2)
 
-        # loss related
-        self.beta1 = 0.5
-        self.lambda_u = 20.0
-        self.lambda_v = 20.0
-        self.learning_rate = 0.00005
+            self.d3, self.d3_w, self.d3_b = deconv2d(tf.nn.relu(d2),
+                                                     [self.batch_size, s32, s32, self.fcn_filter_dim * 8],
+                                                     name=prefix + 'd3', with_w=True)
+            d3 = tf.nn.dropout(batch_norm(self.d3, name=prefix + 'bn_d3'), 0.5)
 
-        # Build model
-        self.input_u = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_u], name='input_u')
-        self.input_v = tf.placeholder(tf.float32, [None, im_size, im_size, im_channel_v], name='input_v')
+            d3 = tf.concat([d3, e5], 3)
+            # d3 is (8 x 8 x self.fcn_filter_dim*8*2)
 
-        # generators
-        self.g_model_u2v = generator(postfix='Gu', inputs=self.input_u, out_channel=self.channel_v,
-                                     n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
-                                     reuse=False, is_training=True)
-        self.g_model_v2u = generator(postfix='Gv', inputs=self.input_v, out_channel=self.channel_u,
-                                     n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
-                                     reuse=False, is_training=True)
+            self.d4, self.d4_w, self.d4_b = deconv2d(tf.nn.relu(d3),
+                                                     [self.batch_size, s16, s16, self.fcn_filter_dim * 8],
+                                                     name=prefix + 'd4', with_w=True)
+            d4 = batch_norm(self.d4, name=prefix + 'bn_d4')
 
-        self.g_model_u2v2u = generator(postfix='Gv', inputs=self.g_model_u2v, out_channel=self.channel_u,
-                                       n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
-                                       reuse=True, is_training=True)
-        self.g_model_v2u2v = generator(postfix='Gu', inputs=self.g_model_v2u, out_channel=self.channel_v,
-                                       n_filter_start=self.n_g_filter_start, alpha=self.alpha, stddev=self.stddev,
-                                       reuse=True, is_training=True)
+            d4 = tf.concat([d4, e4], 3)
+            # d4 is (16 x 16 x self.fcn_filter_dim*8*2)
 
-        # discriminators
-        self.d_model_u_real_logits = discriminator(postfix='Du', inputs=self.input_v,
-                                                   n_filter_start=self.n_d_filter_start, alpha=self.alpha,
-                                                   stddev=self.stddev, reuse=False, is_training=True)
-        self.d_model_u_fake_logits = discriminator(postfix='Du', inputs=self.g_model_u2v,
-                                                   n_filter_start=self.n_d_filter_start, alpha=self.alpha,
-                                                   stddev=self.stddev, reuse=True, is_training=True)
+            self.d5, self.d5_w, self.d5_b = deconv2d(tf.nn.relu(d4),
+                                                     [self.batch_size, s8, s8, self.fcn_filter_dim * 4],
+                                                     name=prefix + 'd5', with_w=True)
+            d5 = batch_norm(self.d5, name=prefix + 'bn_d5')
+            d5 = tf.concat([d5, e3], 3)
+            # d5 is (32 x 32 x self.fcn_filter_dim*4*2)
 
-        self.d_model_v_real_logits = discriminator(postfix='Dv', inputs=self.input_u,
-                                                   n_filter_start=self.n_d_filter_start, alpha=self.alpha,
-                                                   stddev=self.stddev, reuse=False, is_training=True)
-        self.d_model_v_fake_logits = discriminator(postfix='Dv', inputs=self.g_model_v2u,
-                                                   n_filter_start=self.n_d_filter_start, alpha=self.alpha,
-                                                   stddev=self.stddev, reuse=True, is_training=True)
+            self.d6, self.d6_w, self.d6_b = deconv2d(tf.nn.relu(d5),
+                                                     [self.batch_size, s4, s4, self.fcn_filter_dim * 2],
+                                                     name=prefix + 'd6', with_w=True)
+            d6 = batch_norm(self.d6, name=prefix + 'bn_d6')
+            d6 = tf.concat([d6, e2], 3)
+            # d6 is (64 x 64 x self.fcn_filter_dim*2*2)
 
-        # define loss & optimizer
-        self.g_loss_l1_u, self.g_loss_l1_v, self.d_loss, self.g_loss = \
-            model_loss(self.input_u, self.input_v,
-                       self.g_model_u2v2u, self.g_model_v2u2v,
-                       self.d_model_u_fake_logits, self.d_model_u_real_logits,
-                       self.d_model_v_fake_logits, self.d_model_v_real_logits,
-                       self.lambda_u, self.lambda_v)
+            self.d7, self.d7_w, self.d7_b = deconv2d(tf.nn.relu(d6),
+                                                     [self.batch_size, s2, s2, self.fcn_filter_dim], name=prefix + 'd7',
+                                                     with_w=True)
+            d7 = batch_norm(self.d7, name=prefix + 'bn_d7')
+            d7 = tf.concat([d7, e1], 3)
+            # d7 is (128 x 128 x self.fcn_filter_dim*1*2)
 
-        self.d_train_opt, self.g_train_opt = model_opt(self.d_loss, self.g_loss,
-                                                       'Gu', 'Gv', 'Du', 'Dv',
-                                                       self.learning_rate)
+            if prefix == 'B_g_':
+                self.d8, self.d8_w, self.d8_b = deconv2d(tf.nn.relu(d7), [self.batch_size, s, s, self.A_channels],
+                                                         name=prefix + 'd8', with_w=True)
+            elif prefix == 'A_g_':
+                self.d8, self.d8_w, self.d8_b = deconv2d(tf.nn.relu(d7), [self.batch_size, s, s, self.B_channels],
+                                                         name=prefix + 'd8', with_w=True)
+                # d8 is (256 x 256 x output_c_dim)
+            return tf.nn.tanh(self.d8)
 
 def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_size, print_every=30, save_every=100):
     losses = []
@@ -263,6 +288,7 @@ def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_s
     # prepare saver for saving trained model
     saver = tf.train.Saver()
 
+    start_time = time.time()
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
 
@@ -276,37 +302,18 @@ def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_s
 
                 batch_image_u, batch_image_v = train_data_loader.get_next_batch(batch_size)
 
-                fd = {
-                    net.input_u: batch_image_u,
-                    net.input_v: batch_image_v
-                }
-                _ = sess.run(net.d_train_opt, feed_dict=fd)
-                _ = sess.run(net.g_train_opt, feed_dict=fd)
-                _ = sess.run(net.g_train_opt, feed_dict=fd)
-
-                if steps % print_every == 0:
-                    # At the end of each epoch, get the losses and print them out
-                    train_loss_d = net.d_loss.eval(fd)
-                    train_loss_g = net.g_loss.eval(fd)
-
-                    print("Epoch {}/{}...".format(e + 1, epochs),
-                          "Discriminator Loss: {:.4f}...".format(train_loss_d),
-                          "Generator Loss: {:.4f}".format(train_loss_g))
-                    # Save losses to view after training
-                    losses.append((train_loss_d, train_loss_g))
+                net.run_optim(sess, batch_image_u, batch_image_v, steps, start_time)
 
                 if steps % save_every == 0:
                     # save generated images on every epochs
                     random_index = np.random.randint(0, val_data_loader.n_images)
                     test_image_u, test_image_v = val_data_loader.get_image_by_index(random_index)
                     fd_val = {
-                        net.input_u: test_image_u,
-                        net.input_v: test_image_v
+                        net.real_A: test_image_u,
+                        net.real_B: test_image_v
                     }
-                    g_loss_l1_u, g_image_u_to_v_to_u, g_image_u_to_v = \
-                        sess.run([net.g_loss_l1_u, net.g_model_u2v2u, net.g_model_u2v], feed_dict=fd_val)
-                    g_loss_l1_v, g_image_v_to_u_to_v, g_image_v_to_u = \
-                        sess.run([net.g_loss_l1_v, net.g_model_v2u2v, net.g_model_v2u], feed_dict=fd_val)
+                    g_image_u_to_v_to_u, g_image_u_to_v = sess.run([net.A2B2A, net.A2B], feed_dict=fd_val)
+                    g_image_v_to_u_to_v, g_image_v_to_u = sess.run([net.B2A2B, net.B2A], feed_dict=fd_val)
 
                     image_fn = './assets/{:s}/epoch_{:d}-{:d}_tf.png'.format(dataset_name, e, steps)
                     helper.save_result(image_fn,
@@ -318,31 +325,31 @@ def train(net, dataset_name, train_data_loader, val_data_loader, epochs, batch_s
 
     return losses
 
-def test(net, dataset_name, val_data_loader):
-    ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
-    saver = tf.train.Saver()
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        saver.restore(sess, ckpt_fn)
-
-        # run on u set
-        for ii in range(val_data_loader.n_images):
-            test_image_u = val_data_loader.get_image_by_index_u(ii)
-
-            g_image_u_to_v, g_image_u_to_v_to_u = sess.run([net.g_model_u2v, net.g_model_u2v2u],
-                                                           feed_dict={net.input_u: test_image_u})
-
-            image_fn = './assets/{:s}/{:s}_result_u_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
-            helper.save_result_single_row(image_fn, test_image_u, g_image_u_to_v, g_image_u_to_v_to_u)
-
-        # run on v set
-        for ii in range(val_data_loader.n_images):
-            test_image_v = val_data_loader.get_image_by_index_v(ii)
-            g_image_v_to_u, g_image_v_to_u_to_v = sess.run([net.g_model_v2u, net.g_model_v2u2v],
-                                                           feed_dict={net.input_v: test_image_v})
-
-            image_fn = './assets/{:s}/{:s}_result_v_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
-            helper.save_result_single_row(image_fn, test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
+# def test(net, dataset_name, val_data_loader):
+#     ckpt_fn = './checkpoints/DualGAN-{:s}.ckpt'.format(dataset_name)
+#     saver = tf.train.Saver()
+#     with tf.Session() as sess:
+#         sess.run(tf.global_variables_initializer())
+#         saver.restore(sess, ckpt_fn)
+#
+#         # run on u set
+#         for ii in range(val_data_loader.n_images):
+#             test_image_u = val_data_loader.get_image_by_index_u(ii)
+#
+#             g_image_u_to_v, g_image_u_to_v_to_u = sess.run([net.g_model_u2v, net.g_model_u2v2u],
+#                                                            feed_dict={net.input_u: test_image_u})
+#
+#             image_fn = './assets/{:s}/{:s}_result_u_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
+#             helper.save_result_single_row(image_fn, test_image_u, g_image_u_to_v, g_image_u_to_v_to_u)
+#
+#         # run on v set
+#         for ii in range(val_data_loader.n_images):
+#             test_image_v = val_data_loader.get_image_by_index_v(ii)
+#             g_image_v_to_u, g_image_v_to_u_to_v = sess.run([net.g_model_v2u, net.g_model_v2u2v],
+#                                                            feed_dict={net.input_v: test_image_v})
+#
+#             image_fn = './assets/{:s}/{:s}_result_v_{:04d}_tf.png'.format(dataset_name, dataset_name, ii)
+#             helper.save_result_single_row(image_fn, test_image_v, g_image_v_to_u, g_image_v_to_u_to_v)
 
 def main():
     # prepare directories
@@ -381,7 +388,7 @@ def main():
         val_dataset_dir_v = dataset_base_dir + '{:s}/val/B/'.format(dataset_name)
 
         # prepare network
-        net = DualGAN(im_size=im_size, im_channel_u=im_channel, im_channel_v=im_channel)
+        net = DualNet(image_size=im_size, A_channels=im_channel, B_channels=im_channel, dataset_name=dataset_name)
 
         if not is_test:
             # load train & validation datasets
@@ -402,13 +409,13 @@ def main():
             with open('./assets/test_summary.txt', 'a') as f:
                 f.write(test_result_str)
 
-        else:
-            # load train datasets
-            val_data_loader = helper.Dataset(val_dataset_dir_u, val_dataset_dir_v, fn_ext,
-                                             im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
-
-            # validation
-            test(net, dataset_name, val_data_loader)
+        # else:
+        #     # load train datasets
+        #     val_data_loader = helper.Dataset(val_dataset_dir_u, val_dataset_dir_v, fn_ext,
+        #                                      im_size, im_channel, im_channel, do_flip=False, do_shuffle=False)
+        #
+        #     # validation
+        #     test(net, dataset_name, val_data_loader)
 
 # def test1():
 #     fn_ext = 'jpg'
