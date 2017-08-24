@@ -15,3 +15,10 @@
 | ![](./results/sketch-photo_result_0001_tf.png) |
 | ![](./results/sketch-photo_result_0002_tf.png) |
 
+| facades dataset |
+| :---: |
+| Input Real sketch -> Generated photo -> Generated sketch |
+| Input Real photo -> Generated sketch -> Generated photo |
+| ![](./results/facades_result_0000_tf.png) |
+| ![](./results/facades_result_0001_tf.png) |
+| ![](./results/facades_result_0002_tf.png) |
