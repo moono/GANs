@@ -7,12 +7,11 @@
 
 ## Current Results
 
-* sketch-photo
-
+| sketch-photo dataset |
+| :---: |
 | Input Real sketch -> Generated photo -> Generated sketch |
 | Input Real photo -> Generated sketch -> Generated photo |
-| :----: |
-|![](./results/sketch-photo_result_0000_tf.png) |
-|![](./results/sketch-photo_result_0001_tf.png) |
-|![](./results/sketch-photo_result_0002_tf.png) |
+| ![](./results/sketch-photo_result_0000_tf.png) |
+| ![](./results/sketch-photo_result_0001_tf.png) |
+| ![](./results/sketch-photo_result_0002_tf.png) |
 
