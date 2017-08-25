@@ -22,3 +22,11 @@
 | ![](./results/facades_result_0000_tf.png) |
 | ![](./results/facades_result_0001_tf.png) |
 | ![](./results/facades_result_0002_tf.png) |
+
+| oil-chinese dataset |
+| :---: |
+| Input Real sketch -> Generated photo -> Generated sketch |
+| Input Real photo -> Generated sketch -> Generated photo |
+| ![](./results/oil-chinese_result_0000_tf.png) |
+| ![](./results/oil-chinese_result_0001_tf.png) |
+| ![](./results/oil-chinese_result_0002_tf.png) |
