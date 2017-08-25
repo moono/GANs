@@ -30,3 +30,11 @@
 | ![](./results/oil-chinese_result_0000_tf.png) |
 | ![](./results/oil-chinese_result_0001_tf.png) |
 | ![](./results/oil-chinese_result_0002_tf.png) |
+
+| day-night dataset |
+| :---: |
+| Input Real sketch -> Generated photo -> Generated sketch |
+| Input Real photo -> Generated sketch -> Generated photo |
+| ![](./results/day-night_result_0000_tf.png) |
+| ![](./results/day-night_result_0001_tf.png) |
+| ![](./results/day-night_result_0002_tf.png) |
