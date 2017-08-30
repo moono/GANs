@@ -15,7 +15,7 @@ class DRAGAN(object):
         self.z_dim = 100
         self.h_dim = 128
         self.lambd = 10.0
-        self.learning_rate = 0.0001
+        self.learning_rate = 0.001
         self.beta1 = 0.5
         self.mb_size = minibatch_size
 
@@ -177,6 +177,7 @@ def train(net, epochs, batch_size, x_size, z_size, print_every=50):
             samples = sess.run(net.generator(net.inputs_z, reuse=True), feed_dict={net.inputs_z: fixed_z})
             save_generator_output(samples, image_fn, image_title)
 
+
     return losses
 
 def main():
@@ -185,7 +186,7 @@ def main():
     if not os.path.isdir(assets_dir):
         os.mkdir(assets_dir)
 
-    epochs = 100
+    epochs = 30
     batch_size = 128
 
     # create dragan network
@@ -200,6 +201,15 @@ def main():
         .format(epochs, batch_size, total_time)
 
     print(test_result_str)
+
+    fig, ax = plt.subplots()
+    losses = np.array(losses)
+    plt.plot(losses.T[0], label='Discriminator', alpha=0.5)
+    plt.plot(losses.T[1], label='Generator', alpha=0.5)
+    plt.title("Training Losses")
+    plt.legend()
+    plt.savefig('./assets/losses_tf.png')
+    plt.close(fig)
 
 
 if __name__ == '__main__':
