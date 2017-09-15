@@ -76,10 +76,17 @@ class Dataset(object):
         return splitted
 
     def load_images(self, files):
+        def normalize(img):
+            # normalize input [0 ~ 255] ==> [-1 ~ 1]
+            img = img.astype(np.float32)
+            img = (img / self.image_max_value - 0.5) * 2
+            return img
+
         splitted = []
         for img_fn in files:
             # open with opencv
             img = cv2.imread(img_fn)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             height, width, channels = img.shape
 
             # crop image
@@ -94,13 +101,19 @@ class Dataset(object):
             b_image = self.transform(b_image, random_val_flip, offset_h, offset_w)
 
             if self.direction == 'AtoB':
-                inputs, targets = [a_image, b_image]
+                sketch, color = [a_image, b_image]
             elif self.direction == 'BtoA':
-                inputs, targets = [b_image, a_image]
+                sketch, color = [b_image, a_image]
             else:
                 raise Exception('Invalid direction')
 
-            splitted.append((inputs, targets))
+            color_hint = self.spread_random_blur(color)
+
+            sketch = normalize(sketch)
+            color = normalize(color)
+            color_hint = normalize(color_hint)
+
+            splitted.append((sketch, color, color_hint))
         return splitted
 
 
@@ -120,84 +133,54 @@ class Dataset(object):
         elif self.scale_to < self.crop_size:
             raise Exception("scale size cannot be less than crop size")
 
-        # normalize input [0 ~ 255] ==> [-1 ~ 1]
-        r = r.astype(np.float32)
-        r = (r / self.image_max_value - 0.5) * 2
-
         return r
 
+    def spread_random_blur(self, img_color):
+        n_points = self.crop_size // 10
+        loc_x = np.random.randint(0, self.crop_size, n_points)
+        loc_y = np.random.randint(0, self.crop_size, n_points)
 
-    def spread_random_blur(self, img_sketch, img_color):
-        # pick random places to extract color
-        mask = np.random.choice(2, (self.crop_size, self.crop_size), p=[0.01, 0.99]).astype(bool)
-        mask = np.expand_dims(mask, axis=2)
-        mask = np.repeat(mask, repeats=3, axis=2)
-        masked = np.ma.MaskedArray(img_color, mask, fill_value=0)
-        picked = masked.filled()
+        roi_size = self.crop_size // 50
+        roi_calc = roi_size // 2
+        max_boundary = self.crop_size - 1
+        mask = np.zeros_like(img_color[:,:,0], dtype=np.uint8)
+        np.squeeze(mask)
+        for x, y in zip(loc_x, loc_y):
+            x_start = max(x - roi_calc, 0)
+            x_end = min(x + roi_calc, max_boundary)
 
+            y_start = max(y - roi_calc, 0)
+            y_end = min(y + roi_calc, max_boundary)
 
+            mask[y_start:y_end, x_start:x_end] = 255
 
-    # def load_images(self, files):
-    #     splitted = []
-    #     for im in files:
-    #         # open images with PIL
-    #         im = Image.open(im)
+        background = np.ones_like(img_color, dtype=np.uint8) * 255
+        mask_inv = cv2.bitwise_not(mask)
+        color_fg = cv2.bitwise_and(img_color, img_color, mask=mask)
+        color_bg = cv2.bitwise_and(background, background, mask=mask_inv)
+        added = cv2.add(color_bg, color_fg)
+
+        # perform gaussian blur
+        blurred = cv2.GaussianBlur(added, (55, 55), 0)
+
+        return blurred
+
+    # def spread_random_blur(self, img_sketch, img_color):
+    #     # pick random places to extract color
+    #     mask = np.random.choice(2, (self.crop_size, self.crop_size), p=[0.01, 0.99]).astype(bool)
+    #     mask = np.expand_dims(mask, axis=2)
+    #     mask = np.repeat(mask, repeats=3, axis=2)
+    #     masked = np.ma.MaskedArray(img_color, mask, fill_value=255)
+    #     picked = masked.filled()
     #
-    #         # convert to np array
-    #         im = np.array(im.convert('RGB')).astype(np.float32)
-    #         width = im.shape[1]  # [height, width, channels]
-    #         a_image = im[:, :width // 2, :]
-    #         b_image = im[:, width // 2:, :]
+    #     # perform gaussian blur
+    #     blurred = cv2.GaussianBlur(picked, (5, 5), 0)
     #
-    #         if self.is_test:
-    #             # testing examples don't need random flip & random cropping
-    #             a_image = self.transform_testing(a_image)
-    #             b_image = self.transform_testing(b_image)
-    #         else:
-    #             # at training...
-    #             # apply random flip, resize, random crop
-    #             random_val_flip = self.prng.uniform(0, 1)
-    #             offset_h = np.floor(self.prng.uniform(0, self.scale_to - self.crop_size + 1)).astype(np.int32)
-    #             offset_w = np.floor(self.prng.uniform(0, self.scale_to - self.crop_size + 1)).astype(np.int32)
-    #             a_image = self.transform(a_image, random_val_flip, offset_h, offset_w)
-    #             b_image = self.transform(b_image, random_val_flip, offset_h, offset_w)
-    #
-    #         if self.direction == 'AtoB':
-    #             inputs, targets = [a_image, b_image]
-    #         elif self.direction == 'BtoA':
-    #             inputs, targets = [b_image, a_image]
-    #         else:
-    #             raise Exception('Invalid direction')
-    #
-    #         splitted.append((inputs, targets))
-    #     return splitted
-    #
-    # def transform(self, im, random_val, offset_h, offset_w):
-    #     r = im
-    #
-    #     # perform random flip
-    #     if self.do_flip and random_val >= 0.5:
-    #         r = np.flip(r, axis=1)
-    #
-    #     # resize to add random jitter
-    #     r = imresize(r, [self.scale_to, self.scale_to])
-    #
-    #     # randomly crop back to original size
-    #     if self.scale_to > self.crop_size:
-    #         r = r[offset_h:offset_h + self.crop_size, offset_w:offset_w + self.crop_size, :]
-    #     elif self.scale_to < self.crop_size:
-    #         raise Exception("scale size cannot be less than crop size")
+    #     # add two images
+    #     added = cv2.addWeighted(img_sketch, 0.5, blurred, 0.5, 0.0)
     #
     #     # normalize input [0 ~ 255] ==> [-1 ~ 1]
-    #     r = (r / self.image_max_value - 0.5) * 2
-    #     return r
+    #     added = added.astype(np.float32)
+    #     added = (added / self.image_max_value - 0.5) * 2
     #
-    # def transform_testing(self, im):
-    #     r = im
-    #
-    #     if r.shape[0] is not self.crop_size or r.shape[1] is not self.crop_size:
-    #         r = imresize(r, [self.crop_size, self.crop_size])
-    #
-    #     # normalize input [0 ~ 255] ==> [-1 ~ 1]
-    #     r = (r / self.image_max_value - 0.5) * 2
-    #     return r
+    #     return added

@@ -212,6 +212,7 @@ class MGAN(object):
                                                    self.inputs_real, self.gen_out)
 
         # model optimizer
+        self.d_train_opt, self.g_train_opt = self.model_opt(self.d_loss, self.g_loss)
 
 
 
@@ -233,6 +234,7 @@ class MGAN(object):
 
         return d_loss, g_loss
 
+
     def model_opt(self, d_loss, g_loss):
         # Get weights and bias to update
         t_vars = tf.trainable_variables()
@@ -243,16 +245,28 @@ class MGAN(object):
         d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(d_loss, var_list=d_vars)
         g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(g_loss, var_list=g_vars)
 
-        return d_vars, g_vars, d_train_opt, g_train_opt
+        return d_train_opt, g_train_opt
 
 
 
 
-def train(net, epochs, batch_size, train_input_dir, direction):
+def train(net, epochs, batch_size, train_input_dir, direction, print_every=30):
     steps = 0
 
     # prepare dataset
     train_dataset = helper.Dataset(train_input_dir, direction=direction, is_test=False)
+
+    # use last image for testing
+    for_testing = train_dataset.get_image_by_index(-1)
+    test_a = [x for x, y, z in for_testing]
+    test_b = [y for x, y, z in for_testing]
+    test_c = [z for x, y, z in for_testing]
+    test_a = np.array(test_a)
+    test_b = np.array(test_b)
+    test_c = np.array(test_c)
+
+    # prepare saver for saving trained model
+    saver = tf.train.Saver()
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -260,54 +274,63 @@ def train(net, epochs, batch_size, train_input_dir, direction):
             for ii in range(train_dataset.n_images//batch_size):
                 steps += 1
 
-                # will return list of tuples [ (inputs, targets), (inputs, targets), ... , (inputs, targets)]
+                # will return list of tuples [ (sketch, color, color_hint), ... , (sketch, color, color_hint)]
                 batch_images_tuple = train_dataset.get_next_batch(batch_size)
 
-                a = [x for x, y in batch_images_tuple]
-                b = [y for x, y in batch_images_tuple]
+                a = [x for x, y, z in batch_images_tuple]
+                b = [y for x, y, z in batch_images_tuple]
+                c = [z for x, y, z in batch_images_tuple]
                 a = np.array(a)
                 b = np.array(b)
+                c = np.array(c)
 
                 fd = {
                     net.inputs_sketch: a,
                     net.inputs_real: b,
-                    net.inputs_cond: b
+                    net.inputs_cond: c
                 }
+
+                _ = sess.run(net.d_train_opt, feed_dict=fd)
+                _ = sess.run(net.g_train_opt, feed_dict=fd)
+                _ = sess.run(net.g_train_opt, feed_dict=fd)
+
+                if steps % print_every == 0:
+                    # At the end of each epoch, get the losses and print them out
+                    train_loss_d = net.d_loss.eval(fd)
+                    train_loss_g = net.g_loss.eval(fd)
+                    train_loss_g_l1 = net.g_loss_l1.eval(fd)
+
+                    print("Epoch {}/{}...".format(e + 1, epochs),
+                          "Discriminator Loss: {:.4f}...".format(train_loss_d),
+                          "Generator Loss: {:.4f}".format(train_loss_g),
+                          "L1 Loss: {:.4f}".format(train_loss_g_l1))
+
+            save_fn = './assets/train-e-{:02d}.png'.format(e)
+            test_out = sess.run(net.gen_out, feed_dict={net.inputs_sketch: test_a, net.inputs_cond: test_c})
+            helper.save_result(save_fn, test_out, input_image=test_a, target_image=test_b)
+
+        ckpt_fn = './checkpoints/MGAN.ckpt'
+        saver.save(sess, ckpt_fn)
 
     return
 
 def main():
-    target_arr = np.ones((10,10), dtype=np.int32)
-    mask = np.random.choice(2, (10,10), p=[0.01, 0.99]).astype(bool)
-    print(mask)
-    mask = np.expand_dims(mask, axis=2)
-    new_mask = np.repeat(mask, repeats=3, axis=2)
-
-    print(new_mask[:, :, 0])
-    print(new_mask[:, :, 1])
-    print(new_mask[:, :, 2])
-    # non_zero_count = np.count_nonzero(temp_arr)
-    # temp_arr = temp_arr.astype(bool)
-    # masked = np.ma.MaskedArray(target_arr, temp_arr, fill_value=0)
-    # picked = masked.filled()
-
+    # prepare directories
+    assets_dir = './assets/'
+    ckpt_dir = './checkpoints/'
+    if not os.path.isdir(assets_dir):
+        os.mkdir(assets_dir)
+    if not os.path.isdir(ckpt_dir):
+        os.mkdir(ckpt_dir)
 
     epochs = 1
     batch_size = 1
     train_input_dir = 'D:\\db\\pixiv\\sketch-2-color\\merged_refined_512\\'
     direction = 'BtoA'
 
-    # train_dataset = helper.Dataset(train_input_dir, direction=direction, is_test=False)
-    # batch_images_tuple = train_dataset.get_next_batch(batch_size)
-    #
-    # a = [x for x, y in batch_images_tuple]
-    # b = [y for x, y in batch_images_tuple]
-    # a = np.array(a)
-    # b = np.array(b)
-
     mgan = MGAN()
     train(mgan, epochs, batch_size, train_input_dir, direction)
-    print()
+    
     return
 
 
