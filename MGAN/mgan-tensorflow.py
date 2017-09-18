@@ -3,237 +3,20 @@ import glob
 
 import tensorflow as tf
 import numpy as np
-import helper
-
-
-def generator(inputs, cond=None, reuse=False, is_training=True):
-    with tf.variable_scope('generator', reuse=reuse):
-        # set parameters
-        w_init = tf.contrib.layers.xavier_initializer()
-        # alpha = 0.2
-        n_f = 64
-        n_k = 3
-        n_fc = 4096
-        r_drop = 0.5
-        r_nodrop = 0.0
-
-        def encoder(e_in, n_filter, repeat=1):
-            prev_in = e_in
-            for ii in range(repeat):
-                prev_in = tf.layers.conv2d(prev_in, n_filter, n_k, 1, 'same',
-                                           kernel_initializer=w_init, activation=tf.nn.relu)
-            e = tf.layers.conv2d(prev_in, n_filter, n_k, 2, 'same', kernel_initializer=w_init)
-            e = tf.layers.batch_normalization(e, training=is_training)
-            e = tf.nn.relu(e)
-            return e
-
-        def decoder(d_in, n_filter, drop_rate=0.0, repeat=1, last_activation=True):
-            prev_in = d_in
-            for ii in range(repeat):
-                prev_in = tf.layers.conv2d_transpose(inputs=prev_in, filters=n_filter, kernel_size=n_k, strides=1,
-                                                     padding='same')
-                prev_in = tf.layers.dropout(prev_in, rate=drop_rate, training=True)
-                prev_in = tf.nn.relu(prev_in)
-
-            d = tf.layers.conv2d_transpose(inputs=prev_in, filters=n_filter, kernel_size=n_k, strides=2, padding='same')
-
-            if last_activation:
-                d = tf.layers.batch_normalization(d, training=is_training)
-                d = tf.layers.dropout(d, rate=drop_rate, training=True)
-                d = tf.nn.relu(d)
-            else:
-                d = tf.tanh(d)
-
-            return d
-
-        concated = inputs
-        if cond is not None:
-            concated = tf.concat([inputs, cond], axis=3)
-
-        # encoder 1: [batch size, 512, 512, 6] ==> [batch size, 256, 256, 64]
-        e1 = encoder(concated, n_f, repeat=1)
-
-        # encoder 2: [batch size, 256, 256, 64] ==> [batch size, 128, 128, 128]
-        e2 = encoder(e1, n_f * 2, repeat=1)
-
-        # encoder 3: [batch size, 128, 128, 128] ==> [batch size, 64, 64, 256]
-        e3 = encoder(e2, n_f * 4, repeat=1)
-
-        # encoder 4: [batch size, 64, 64, 256] ==> [batch size, 32, 32, 512]
-        e4 = encoder(e3, n_f * 8, repeat=2)
-
-        # encoder 5: [batch size, 32, 32, 512] ==> [batch size, 16, 16, 512]
-        e5 = encoder(e4, n_f * 8, repeat=2)
-
-        # encoder 6: [batch size, 16, 16, 512] ==> [batch size, 8, 8, 512]
-        e6 = encoder(e5, n_f * 8, repeat=2)
-
-        # encoder 7: [batch size, 8, 8, 512] ==> [batch size, 4, 4, 512]
-        e7 = encoder(e6, n_f * 8, repeat=2)
-
-        # encoder 8: [batch size, 4, 4, 512] ==> [batch size, 2, 2, 512]
-        e8 = encoder(e7, n_f * 8, repeat=2)
-
-        # reshape e8: [batch size, 2, 2, 512] ==> [batch size, 2048]
-        # dim: 2 * 2 * 512 = 2048
-        e8_shape = e8.get_shape().as_list()
-        dim = 1
-        for d in e8_shape[1:]:
-            dim *= d
-        reshaped_e8 = tf.reshape(e8, [-1, dim])
-
-        # dense 1: [batch size, 2048] ==> [batch size, 4096]
-        dense1 = tf.layers.dense(reshaped_e8, n_fc, kernel_initializer=w_init, activation=tf.nn.relu)
-
-        # dense 2: [batch size, 4096] ==> [batch size, 2048]
-        dense2 = tf.layers.dense(dense1, dim, kernel_initializer=w_init, activation=tf.nn.relu)
-
-        # reshape dense 2: [batch size, 2048] ==> [batch size, 2, 2, 512]
-        reshaped_dense2 = tf.reshape(dense2, [-1, e8_shape[1], e8_shape[2], e8_shape[3]])
-
-        # decoder 1: [batch size, 2, 2, 512 * 2] ==> [batch size, 4, 4, 512]
-        concated_08 = tf.concat([reshaped_dense2, e8], axis=3)
-        d1 = decoder(concated_08, n_f * 8, r_drop, repeat=2)
-
-        # decoder 2: [batch size, 4, 4, 512 * 2] ==> [batch size, 8, 8, 512]
-        concated_17 = tf.concat([d1, e7], axis=3)
-        d2 = decoder(concated_17, n_f * 8, r_drop, repeat=2)
-
-        # decoder 3: [batch size, 8, 8, 512 * 2] ==> [batch size, 16, 16, 512]
-        concated_26 = tf.concat([d2, e6], axis=3)
-        d3 = decoder(concated_26, n_f * 8, r_drop, repeat=2)
-
-        # decoder 4: [batch size, 16, 16, 512 * 2] ==> [batch size, 32, 32, 512]
-        concated_35 = tf.concat([d3, e5], axis=3)
-        d4 = decoder(concated_35, n_f * 8, r_drop, repeat=2)
-
-        # decoder 4: [batch size, 32, 32, 512 * 2] ==> [batch size, 64, 64, 256]
-        concated_44 = tf.concat([d4, e4], axis=3)
-        d5 = decoder(concated_44, n_f * 4, r_nodrop, repeat=1)
-
-        # decoder 5: [batch size, 64, 64, 256 * 2] ==> [batch size, 128, 128, 128]
-        concated_53 = tf.concat([d5, e3], axis=3)
-        d6 = decoder(concated_53, n_f * 2, r_nodrop, repeat=1)
-
-        # decoder 6: [batch size, 128, 128, 128 * 2] ==> [batch size, 256, 256, 64]
-        concated_62 = tf.concat([d6, e2], axis=3)
-        d7 = decoder(concated_62, n_f, r_nodrop, repeat=2)
-
-        # decoder 13: [batch size, 256, 256, 64 * 2] ==> [batch size, 512, 512, 3]
-        concated_71 = tf.concat([d7, e1], axis=3)
-        d8 = decoder(concated_71, 3, r_nodrop, repeat=1, last_activation=False)
-
-        return d8
-
-
-def discriminator(inputs, targets, reuse=False, is_training=True):
-    with tf.variable_scope('discriminator', reuse=reuse):
-        w_init = tf.contrib.layers.xavier_initializer()
-        alpha = 0.2
-        n_f = 64
-        n_k = 4
-        
-        # concatenate inputs
-        # [batch, 512, 512, 3] + [batch, 512, 512, 3] => [batch, 512, 512, 6]
-        concat_inputs = tf.concat(values=[inputs, targets], axis=3)
-
-        # layer_1: [batch, 512, 512, 6] => [batch, 256, 256, 64]
-        l1 = tf.layers.conv2d(concat_inputs, filters=n_f, kernel_size=n_k, strides=2, padding='same',
-                              kernel_initializer=w_init, use_bias=False)
-        l1 = tf.maximum(alpha * l1, l1)
-
-        # layer_2: [batch, 256, 256, 64] => [batch, 128, 128, 128]
-        l2 = tf.layers.conv2d(l1, filters=n_f * 2, kernel_size=n_k, strides=2, padding='same',
-                              kernel_initializer=w_init, use_bias=False)
-        l2 = tf.layers.batch_normalization(inputs=l2, training=is_training)
-        l2 = tf.maximum(alpha * l2, l2)
-
-        # layer_3: [batch, 128, 128, 128] => [batch, 64, 64, 256]
-        l3 = tf.layers.conv2d(l2, filters=n_f * 4, kernel_size=n_k, strides=2, padding='same',
-                              kernel_initializer=w_init, use_bias=False)
-        l3 = tf.layers.batch_normalization(inputs=l3, training=is_training)
-        l3 = tf.maximum(alpha * l3, l3)
-
-        # layer_4: [batch, 64, 64, 256] => [batch, 61, 61, 512]
-        l4 = tf.layers.conv2d(l3, filters=n_f * 8, kernel_size=n_k, strides=1, padding='valid',
-                              kernel_initializer=w_init, use_bias=False)
-
-        # layer_5: [batch, 61, 61, 512] => [batch, 58, 58, 1]
-        logits = tf.layers.conv2d(l4, filters=1, kernel_size=n_k, strides=1, padding='valid',
-                                  kernel_initializer=w_init, use_bias=False)
-
-        return logits
-
-# def discriminator(inputs, reuse=False, is_training=True):
-#     with tf.variable_scope('discriminator', reuse=reuse):
-#         # set parameters
-#         w_init = tf.contrib.layers.xavier_initializer()
-#         alpha = 0.2
-#         n_f = 64
-#         n_k = 3
-#         n_fc = 512
-#
-#         def encoder(e_in, n_filter, repeat=1):
-#             prev_in = e_in
-#             for ii in range(repeat):
-#                 prev_in = tf.layers.conv2d(prev_in, n_filter, n_k, 1, 'same',
-#                                            kernel_initializer=w_init, activation=tf.nn.relu)
-#             e = tf.layers.conv2d(prev_in, n_filter, n_k, 2, 'same', kernel_initializer=w_init)
-#             e = tf.layers.batch_normalization(e, training=is_training)
-#             e = tf.maximum(alpha * e, e)
-#             return e
-#
-#         # encoder 1: [batch size, 512, 512, 3] ==> [batch size, 256, 256, 64]
-#         e1 = encoder(inputs, n_f, repeat=1)
-#
-#         # encoder 2: [batch size, 256, 256, 64] ==> [batch size, 128, 128, 128]
-#         e2 = encoder(e1, n_f * 2, repeat=1)
-#
-#         # encoder 3: [batch size, 128, 128, 128] ==> [batch size, 64, 64, 256]
-#         e3 = encoder(e2, n_f * 4, repeat=1)
-#
-#         # encoder 4: [batch size, 64, 64, 256] ==> [batch size, 32, 32, 512]
-#         e4 = encoder(e3, n_f * 8, repeat=2)
-#
-#         # encoder 5: [batch size, 32, 32, 512] ==> [batch size, 16, 16, 512]
-#         e5 = encoder(e4, n_f * 8, repeat=2)
-#
-#         # encoder 6: [batch size, 16, 16, 512] ==> [batch size, 8, 8, 512]
-#         e6 = encoder(e5, n_f * 8, repeat=2)
-#
-#         # encoder 7: [batch size, 8, 8, 512] ==> [batch size, 4, 4, 512]
-#         e7 = encoder(e6, n_f * 8, repeat=2)
-#
-#         # encoder 8: [batch size, 4, 4, 512] ==> [batch size, 2, 2, 512]
-#         e8 = encoder(e7, n_f * 8, repeat=2)
-#
-#         # reshape e8: [batch size, 2, 2, 512] ==> [batch size, 2048]
-#         # dim: 2 * 2 * 512 = 2048
-#         e8_shape = e8.get_shape().as_list()
-#         dim = 1
-#         for d in e8_shape[1:]:
-#             dim *= d
-#         reshaped_e8 = tf.reshape(e8, [-1, dim])
-#
-#         # dense 1: [batch size, 2048] ==> [batch size, 512]
-#         dense1 = tf.layers.dense(reshaped_e8, n_fc, kernel_initializer=w_init, activation=tf.nn.relu)
-#
-#         # dense 2: [batch size, 512] ==> [batch size, 64]
-#         dense2 = tf.layers.dense(dense1, n_fc // 8, kernel_initializer=w_init, activation=tf.nn.relu)
-#
-#         # dense 3: [batch size, 64] ==> [batch size, 1]
-#         dense3 = tf.layers.dense(dense2, 1, kernel_initializer=w_init, activation=tf.nn.relu)
-#
-#         return dense3
+# import helper
+from helpers.helper import Dataset, save_result
+from helpers.ops import generator, discriminator
 
 
 class MGAN(object):
-    def __init__(self):
+    def __init__(self, minibatch_size=1):
         tf.reset_default_graph()
 
         # parameters
         self.im_size = 512
-        self.lmbda = 100.0
+        self.lmbda_l1 = 20.0
+        self.lmbda_gp = 10.0
+        self.mb_size = minibatch_size
         self.beta1 = 0.5
         self.learning_rate = 0.0002
 
@@ -241,6 +24,7 @@ class MGAN(object):
         self.inputs_sketch = tf.placeholder(tf.float32, [None, self.im_size, self.im_size, 3], name='inputs_sketch')
         self.inputs_real = tf.placeholder(tf.float32, [None, self.im_size, self.im_size, 3], name='inputs_real')
         self.inputs_cond = tf.placeholder(tf.float32, [None, self.im_size, self.im_size, 3], name='inputs_cond')
+        self.inputs_pt = tf.placeholder(tf.float32, [None, self.im_size, self.im_size, 3], name='inputs_perturbed')
 
         # create generator & discriminator out
         self.gen_out = generator(self.inputs_sketch, self.inputs_cond, reuse=False, is_training=True)
@@ -249,14 +33,14 @@ class MGAN(object):
 
         # model loss computation
         self.d_loss, self.g_loss = self.model_loss(self.dis_logit_real, self.dis_logit_fake,
-                                                   self.inputs_real, self.gen_out)
+                                                   self.inputs_sketch, self.inputs_real, self.gen_out, self.inputs_pt)
 
         # model optimizer
         self.d_train_opt, self.g_train_opt = self.model_opt(self.d_loss, self.g_loss)
 
 
 
-    def model_loss(self, dis_logit_real, dis_logit_fake, inputs_real, gen_out):
+    def model_loss(self, dis_logit_real, dis_logit_fake, inputs_sketch, inputs_real, gen_out, inputs_pt):
         # shorten cross entropy loss calculation
         def celoss_ones(logits):
             return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.ones_like(logits)))
@@ -264,13 +48,25 @@ class MGAN(object):
         def celoss_zeros(logits):
             return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.zeros_like(logits)))
 
+        # discriminator losses
         d_loss_real = celoss_ones(dis_logit_real)
         d_loss_fake = celoss_zeros(dis_logit_fake)
-        d_loss = d_loss_real + d_loss_fake
 
-        g_loss_l1 = tf.reduce_mean(tf.abs(inputs_real - gen_out))
+        # compute gradient penalty
+        alpha_t = tf.random_uniform(shape=[self.mb_size, 1], minval=0., maxval=1.)
+        differences_t = inputs_pt - inputs_real
+        interpolated_t = inputs_real + (alpha_t * differences_t)
+        gradients = tf.gradients(discriminator(inputs_sketch, interpolated_t, reuse=True, is_training=True),
+                                 [interpolated_t])[0]
+        slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
+        gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
+
+        d_loss = d_loss_real + d_loss_fake + self.lmbda_gp * gradient_penalty
+
+        # generator losses
         g_loss_gan = celoss_ones(dis_logit_fake)
-        g_loss = self.lmbda * g_loss_l1 + g_loss_gan
+        g_loss_l1 = tf.reduce_mean(tf.abs(inputs_real - gen_out))
+        g_loss = self.lmbda_l1 * g_loss_l1 + g_loss_gan
 
         return d_loss, g_loss
 
@@ -303,15 +99,20 @@ def test_single_image(data_loader, save_index, sess, net):
 
     save_fn = './assets/train-out{:02d}.png'.format(save_index)
     test_out = sess.run(net.gen_out, feed_dict={net.inputs_sketch: test_a, net.inputs_cond: test_c})
-    helper.save_result(save_fn, test_out, input_image=test_a, target_image=test_b)
+    save_result(save_fn, test_out, input_image=test_a, target_image=test_b)
     return
+
+
+# input preturbation function
+def get_perturbed_batch(minibatch):
+    return minibatch + 0.5 * minibatch.std() * np.random.random(minibatch.shape)
 
 
 def train(net, epochs, batch_size, train_input_dir, direction, print_every=30, save_every=50):
     steps = 0
 
     # prepare dataset
-    train_dataset = helper.Dataset(train_input_dir, direction=direction, is_test=False)
+    train_dataset = Dataset(train_input_dir, direction=direction, is_test=False)
 
     # prepare saver for saving trained model
     saver = tf.train.Saver()
@@ -332,10 +133,14 @@ def train(net, epochs, batch_size, train_input_dir, direction, print_every=30, s
                 b = np.array(b)
                 c = np.array(c)
 
+                # create perturbed target
+                p = get_perturbed_batch(b)
+
                 fd = {
                     net.inputs_sketch: a,
                     net.inputs_real: b,
-                    net.inputs_cond: c
+                    net.inputs_cond: c,
+                    net.inputs_pt: p
                 }
 
                 _ = sess.run(net.d_train_opt, feed_dict=fd)
@@ -371,9 +176,9 @@ def main():
     if not os.path.isdir(ckpt_dir):
         os.mkdir(ckpt_dir)
 
-    epochs = 600
-    batch_size = 4
-    train_input_dir = '/mnt/my_data/image-data/pixiv-dataset/merged_refined_512/'
+    epochs = 50
+    batch_size = 1
+    train_input_dir = 'd:/db/getchu/merged_512/'
     direction = 'BtoA'
 
     mgan = MGAN()
