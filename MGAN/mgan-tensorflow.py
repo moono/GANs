@@ -126,76 +126,116 @@ def generator(inputs, cond=None, reuse=False, is_training=True):
         return d8
 
 
-def discriminator(inputs, reuse=False, is_training=True):
+def discriminator(inputs, targets, reuse=False, is_training=True):
     with tf.variable_scope('discriminator', reuse=reuse):
-        # set parameters
         w_init = tf.contrib.layers.xavier_initializer()
         alpha = 0.2
         n_f = 64
-        n_k = 3
-        n_fc = 512
+        n_k = 4
+        
+        # concatenate inputs
+        # [batch, 512, 512, 3] + [batch, 512, 512, 3] => [batch, 512, 512, 6]
+        concat_inputs = tf.concat(values=[inputs, targets], axis=3)
 
-        def encoder(e_in, n_filter, repeat=1):
-            prev_in = e_in
-            for ii in range(repeat):
-                prev_in = tf.layers.conv2d(prev_in, n_filter, n_k, 1, 'same',
-                                           kernel_initializer=w_init, activation=tf.nn.relu)
-            e = tf.layers.conv2d(prev_in, n_filter, n_k, 2, 'same', kernel_initializer=w_init)
-            e = tf.layers.batch_normalization(e, training=is_training)
-            e = tf.maximum(alpha * e, e)
-            return e
+        # layer_1: [batch, 512, 512, 6] => [batch, 256, 256, 64]
+        l1 = tf.layers.conv2d(concat_inputs, filters=n_f, kernel_size=n_k, strides=2, padding='same',
+                              kernel_initializer=w_init, use_bias=False)
+        l1 = tf.maximum(alpha * l1, l1)
 
-        # encoder 1: [batch size, 512, 512, 3] ==> [batch size, 256, 256, 64]
-        e1 = encoder(inputs, n_f, repeat=1)
+        # layer_2: [batch, 256, 256, 64] => [batch, 128, 128, 128]
+        l2 = tf.layers.conv2d(l1, filters=n_f * 2, kernel_size=n_k, strides=2, padding='same',
+                              kernel_initializer=w_init, use_bias=False)
+        l2 = tf.layers.batch_normalization(inputs=l2, training=is_training)
+        l2 = tf.maximum(alpha * l2, l2)
 
-        # encoder 2: [batch size, 256, 256, 64] ==> [batch size, 128, 128, 128]
-        e2 = encoder(e1, n_f * 2, repeat=1)
+        # layer_3: [batch, 128, 128, 128] => [batch, 64, 64, 256]
+        l3 = tf.layers.conv2d(l2, filters=n_f * 4, kernel_size=n_k, strides=2, padding='same',
+                              kernel_initializer=w_init, use_bias=False)
+        l3 = tf.layers.batch_normalization(inputs=l3, training=is_training)
+        l3 = tf.maximum(alpha * l3, l3)
 
-        # encoder 3: [batch size, 128, 128, 128] ==> [batch size, 64, 64, 256]
-        e3 = encoder(e2, n_f * 4, repeat=1)
+        # layer_4: [batch, 64, 64, 256] => [batch, 61, 61, 512]
+        l4 = tf.layers.conv2d(l3, filters=n_f * 8, kernel_size=n_k, strides=1, padding='valid',
+                              kernel_initializer=w_init, use_bias=False)
 
-        # encoder 4: [batch size, 64, 64, 256] ==> [batch size, 32, 32, 512]
-        e4 = encoder(e3, n_f * 8, repeat=2)
+        # layer_5: [batch, 61, 61, 512] => [batch, 58, 58, 1]
+        logits = tf.layers.conv2d(l4, filters=1, kernel_size=n_k, strides=1, padding='valid',
+                                  kernel_initializer=w_init, use_bias=False)
 
-        # encoder 5: [batch size, 32, 32, 512] ==> [batch size, 16, 16, 512]
-        e5 = encoder(e4, n_f * 8, repeat=2)
+        return logits
 
-        # encoder 6: [batch size, 16, 16, 512] ==> [batch size, 8, 8, 512]
-        e6 = encoder(e5, n_f * 8, repeat=2)
-
-        # encoder 7: [batch size, 8, 8, 512] ==> [batch size, 4, 4, 512]
-        e7 = encoder(e6, n_f * 8, repeat=2)
-
-        # encoder 8: [batch size, 4, 4, 512] ==> [batch size, 2, 2, 512]
-        e8 = encoder(e7, n_f * 8, repeat=2)
-
-        # reshape e8: [batch size, 2, 2, 512] ==> [batch size, 2048]
-        # dim: 2 * 2 * 512 = 2048
-        e8_shape = e8.get_shape().as_list()
-        dim = 1
-        for d in e8_shape[1:]:
-            dim *= d
-        reshaped_e8 = tf.reshape(e8, [-1, dim])
-
-        # dense 1: [batch size, 2048] ==> [batch size, 512]
-        dense1 = tf.layers.dense(reshaped_e8, n_fc, kernel_initializer=w_init, activation=tf.nn.relu)
-
-        # dense 2: [batch size, 512] ==> [batch size, 64]
-        dense2 = tf.layers.dense(dense1, n_fc // 8, kernel_initializer=w_init, activation=tf.nn.relu)
-
-        # dense 3: [batch size, 64] ==> [batch size, 1]
-        dense3 = tf.layers.dense(dense2, 1, kernel_initializer=w_init, activation=tf.nn.relu)
-
-        return dense3
+# def discriminator(inputs, reuse=False, is_training=True):
+#     with tf.variable_scope('discriminator', reuse=reuse):
+#         # set parameters
+#         w_init = tf.contrib.layers.xavier_initializer()
+#         alpha = 0.2
+#         n_f = 64
+#         n_k = 3
+#         n_fc = 512
+#
+#         def encoder(e_in, n_filter, repeat=1):
+#             prev_in = e_in
+#             for ii in range(repeat):
+#                 prev_in = tf.layers.conv2d(prev_in, n_filter, n_k, 1, 'same',
+#                                            kernel_initializer=w_init, activation=tf.nn.relu)
+#             e = tf.layers.conv2d(prev_in, n_filter, n_k, 2, 'same', kernel_initializer=w_init)
+#             e = tf.layers.batch_normalization(e, training=is_training)
+#             e = tf.maximum(alpha * e, e)
+#             return e
+#
+#         # encoder 1: [batch size, 512, 512, 3] ==> [batch size, 256, 256, 64]
+#         e1 = encoder(inputs, n_f, repeat=1)
+#
+#         # encoder 2: [batch size, 256, 256, 64] ==> [batch size, 128, 128, 128]
+#         e2 = encoder(e1, n_f * 2, repeat=1)
+#
+#         # encoder 3: [batch size, 128, 128, 128] ==> [batch size, 64, 64, 256]
+#         e3 = encoder(e2, n_f * 4, repeat=1)
+#
+#         # encoder 4: [batch size, 64, 64, 256] ==> [batch size, 32, 32, 512]
+#         e4 = encoder(e3, n_f * 8, repeat=2)
+#
+#         # encoder 5: [batch size, 32, 32, 512] ==> [batch size, 16, 16, 512]
+#         e5 = encoder(e4, n_f * 8, repeat=2)
+#
+#         # encoder 6: [batch size, 16, 16, 512] ==> [batch size, 8, 8, 512]
+#         e6 = encoder(e5, n_f * 8, repeat=2)
+#
+#         # encoder 7: [batch size, 8, 8, 512] ==> [batch size, 4, 4, 512]
+#         e7 = encoder(e6, n_f * 8, repeat=2)
+#
+#         # encoder 8: [batch size, 4, 4, 512] ==> [batch size, 2, 2, 512]
+#         e8 = encoder(e7, n_f * 8, repeat=2)
+#
+#         # reshape e8: [batch size, 2, 2, 512] ==> [batch size, 2048]
+#         # dim: 2 * 2 * 512 = 2048
+#         e8_shape = e8.get_shape().as_list()
+#         dim = 1
+#         for d in e8_shape[1:]:
+#             dim *= d
+#         reshaped_e8 = tf.reshape(e8, [-1, dim])
+#
+#         # dense 1: [batch size, 2048] ==> [batch size, 512]
+#         dense1 = tf.layers.dense(reshaped_e8, n_fc, kernel_initializer=w_init, activation=tf.nn.relu)
+#
+#         # dense 2: [batch size, 512] ==> [batch size, 64]
+#         dense2 = tf.layers.dense(dense1, n_fc // 8, kernel_initializer=w_init, activation=tf.nn.relu)
+#
+#         # dense 3: [batch size, 64] ==> [batch size, 1]
+#         dense3 = tf.layers.dense(dense2, 1, kernel_initializer=w_init, activation=tf.nn.relu)
+#
+#         return dense3
 
 
 class MGAN(object):
     def __init__(self):
+        tf.reset_default_graph()
+
         # parameters
         self.im_size = 512
-        self.lmbda = 20.0
+        self.lmbda = 100.0
         self.beta1 = 0.5
-        self.learning_rate = 0.00002
+        self.learning_rate = 0.0002
 
         # input place holders
         self.inputs_sketch = tf.placeholder(tf.float32, [None, self.im_size, self.im_size, 3], name='inputs_sketch')
@@ -204,8 +244,8 @@ class MGAN(object):
 
         # create generator & discriminator out
         self.gen_out = generator(self.inputs_sketch, self.inputs_cond, reuse=False, is_training=True)
-        self.dis_logit_real = discriminator(self.inputs_real, reuse=False, is_training=True)
-        self.dis_logit_fake = discriminator(self.gen_out, reuse=True, is_training=True)
+        self.dis_logit_real = discriminator(self.inputs_sketch, self.inputs_real, reuse=False, is_training=True)
+        self.dis_logit_fake = discriminator(self.inputs_sketch, self.gen_out, reuse=True, is_training=True)
 
         # model loss computation
         self.d_loss, self.g_loss = self.model_loss(self.dis_logit_real, self.dis_logit_fake,
@@ -225,7 +265,7 @@ class MGAN(object):
             return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.zeros_like(logits)))
 
         d_loss_real = celoss_ones(dis_logit_real)
-        d_loss_fake = celoss_ones(dis_logit_fake)
+        d_loss_fake = celoss_zeros(dis_logit_fake)
         d_loss = d_loss_real + d_loss_fake
 
         g_loss_l1 = tf.reduce_mean(tf.abs(inputs_real - gen_out))
@@ -242,28 +282,36 @@ class MGAN(object):
         g_vars = [var for var in t_vars if var.name.startswith('generator')]
 
         # Optimizers
-        d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(d_loss, var_list=d_vars)
-        g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(g_loss, var_list=g_vars)
+        with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
+            d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(d_loss, var_list=d_vars)
+            g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=self.beta1).minimize(g_loss, var_list=g_vars)
 
         return d_train_opt, g_train_opt
 
 
-
-
-def train(net, epochs, batch_size, train_input_dir, direction, print_every=30):
-    steps = 0
-
-    # prepare dataset
-    train_dataset = helper.Dataset(train_input_dir, direction=direction, is_test=False)
+def test_single_image(data_loader, save_index, sess, net):
+    index = np.random.randint(0, data_loader.n_images)
 
     # use last image for testing
-    for_testing = train_dataset.get_image_by_index(-1)
+    for_testing = data_loader.get_image_by_index(index)
     test_a = [x for x, y, z in for_testing]
     test_b = [y for x, y, z in for_testing]
     test_c = [z for x, y, z in for_testing]
     test_a = np.array(test_a)
     test_b = np.array(test_b)
     test_c = np.array(test_c)
+
+    save_fn = './assets/train-out{:02d}.png'.format(save_index)
+    test_out = sess.run(net.gen_out, feed_dict={net.inputs_sketch: test_a, net.inputs_cond: test_c})
+    helper.save_result(save_fn, test_out, input_image=test_a, target_image=test_b)
+    return
+
+
+def train(net, epochs, batch_size, train_input_dir, direction, print_every=30, save_every=50):
+    steps = 0
+
+    # prepare dataset
+    train_dataset = helper.Dataset(train_input_dir, direction=direction, is_test=False)
 
     # prepare saver for saving trained model
     saver = tf.train.Saver()
@@ -298,21 +346,21 @@ def train(net, epochs, batch_size, train_input_dir, direction, print_every=30):
                     # At the end of each epoch, get the losses and print them out
                     train_loss_d = net.d_loss.eval(fd)
                     train_loss_g = net.g_loss.eval(fd)
-                    train_loss_g_l1 = net.g_loss_l1.eval(fd)
 
                     print("Epoch {}/{}...".format(e + 1, epochs),
                           "Discriminator Loss: {:.4f}...".format(train_loss_d),
-                          "Generator Loss: {:.4f}".format(train_loss_g),
-                          "L1 Loss: {:.4f}".format(train_loss_g_l1))
+                          "Generator Loss: {:.4f}".format(train_loss_g))
 
-            save_fn = './assets/train-e-{:02d}.png'.format(e)
-            test_out = sess.run(net.gen_out, feed_dict={net.inputs_sketch: test_a, net.inputs_cond: test_c})
-            helper.save_result(save_fn, test_out, input_image=test_a, target_image=test_b)
+            # save train output
+            test_single_image(train_dataset, e, sess, net)
 
-        ckpt_fn = './checkpoints/MGAN.ckpt'
-        saver.save(sess, ckpt_fn)
+            # save trained model
+            if e % save_every == 0:
+                saver.save(sess, './checkpoints/MGAN.ckpt', global_step=steps)
 
+        saver.save(sess, './checkpoints/MGAN.ckpt')
     return
+
 
 def main():
     # prepare directories
@@ -323,9 +371,9 @@ def main():
     if not os.path.isdir(ckpt_dir):
         os.mkdir(ckpt_dir)
 
-    epochs = 1
-    batch_size = 1
-    train_input_dir = 'D:\\db\\pixiv\\sketch-2-color\\merged_refined_512\\'
+    epochs = 600
+    batch_size = 4
+    train_input_dir = '/mnt/my_data/image-data/pixiv-dataset/merged_refined_512/'
     direction = 'BtoA'
 
     mgan = MGAN()
