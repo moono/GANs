@@ -105,19 +105,19 @@ def generator(inputs, cond=None, reuse=False, is_training=True):
         concated_35 = tf.concat([d3, e5], axis=3)
         d4 = decoder(concated_35, n_f * 8, n_k, w_init, is_training, r_drop, repeat=2)
 
-        # decoder 4: [batch size, 32, 32, 512 * 2] ==> [batch size, 64, 64, 256]
+        # decoder 5: [batch size, 32, 32, 512 * 2] ==> [batch size, 64, 64, 256]
         concated_44 = tf.concat([d4, e4], axis=3)
         d5 = decoder(concated_44, n_f * 4, n_k, w_init, is_training, r_nodrop, repeat=2)
 
-        # decoder 5: [batch size, 64, 64, 256 * 2] ==> [batch size, 128, 128, 128]
+        # decoder 6: [batch size, 64, 64, 256 * 2] ==> [batch size, 128, 128, 128]
         concated_53 = tf.concat([d5, e3], axis=3)
         d6 = decoder(concated_53, n_f * 2, n_k, w_init, is_training, r_nodrop, repeat=1)
 
-        # decoder 6: [batch size, 128, 128, 128 * 2] ==> [batch size, 256, 256, 64]
+        # decoder 7: [batch size, 128, 128, 128 * 2] ==> [batch size, 256, 256, 64]
         concated_62 = tf.concat([d6, e2], axis=3)
         d7 = decoder(concated_62, n_f, n_k, w_init, is_training, r_nodrop, repeat=1)
 
-        # decoder 13: [batch size, 256, 256, 64 * 2] ==> [batch size, 512, 512, 3]
+        # decoder 8: [batch size, 256, 256, 64 * 2] ==> [batch size, 512, 512, 3]
         concated_71 = tf.concat([d7, e1], axis=3)
         d8 = decoder(concated_71, 3, n_k, w_init, is_training, r_nodrop, repeat=1, is_last_layer=True)
 

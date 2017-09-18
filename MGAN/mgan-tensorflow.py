@@ -1,11 +1,9 @@
 import os
-import glob
-
 import tensorflow as tf
 import numpy as np
-# import helper
-from helpers.helper import Dataset, save_result
-from helpers.ops import generator, discriminator
+
+from .helpers.helper import Dataset, save_result
+from .helpers.ops import generator, discriminator
 
 
 class MGAN(object):
@@ -176,9 +174,10 @@ def main():
     if not os.path.isdir(ckpt_dir):
         os.mkdir(ckpt_dir)
 
-    epochs = 50
+    epochs = 100
     batch_size = 1
-    train_input_dir = 'd:/db/getchu/merged_512/'
+    # train_input_dir = 'd:/db/getchu/merged_512/'
+    train_input_dir = '/mnt/my_data/image_data/getchu/merged_512/'
     direction = 'BtoA'
 
     mgan = MGAN()
