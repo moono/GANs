@@ -2,8 +2,8 @@ import os
 import tensorflow as tf
 import numpy as np
 
-from .helpers.helper import Dataset, save_result
-from .helpers.ops import generator, discriminator
+from helpers.helper import Dataset, save_result
+from helpers.ops import generator, discriminator, discriminator_vgg16
 
 
 class MGAN(object):
@@ -26,8 +26,8 @@ class MGAN(object):
 
         # create generator & discriminator out
         self.gen_out = generator(self.inputs_sketch, self.inputs_cond, reuse=False, is_training=True)
-        self.dis_logit_real = discriminator(self.inputs_sketch, self.inputs_real, reuse=False, is_training=True)
-        self.dis_logit_fake = discriminator(self.inputs_sketch, self.gen_out, reuse=True, is_training=True)
+        self.dis_logit_real = discriminator_vgg16(self.inputs_sketch, self.inputs_real, reuse=False, is_training=True)
+        self.dis_logit_fake = discriminator_vgg16(self.inputs_sketch, self.gen_out, reuse=True, is_training=True)
 
         # model loss computation
         self.d_loss, self.g_loss = self.model_loss(self.dis_logit_real, self.dis_logit_fake,
@@ -54,7 +54,7 @@ class MGAN(object):
         alpha_t = tf.random_uniform(shape=[self.mb_size, 1], minval=0., maxval=1.)
         differences_t = inputs_pt - inputs_real
         interpolated_t = inputs_real + (alpha_t * differences_t)
-        gradients = tf.gradients(discriminator(inputs_sketch, interpolated_t, reuse=True, is_training=True),
+        gradients = tf.gradients(discriminator_vgg16(inputs_sketch, interpolated_t, reuse=True, is_training=True),
                                  [interpolated_t])[0]
         slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
         gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
@@ -176,8 +176,8 @@ def main():
 
     epochs = 100
     batch_size = 1
-    # train_input_dir = 'd:/db/getchu/merged_512/'
-    train_input_dir = '/mnt/my_data/image_data/getchu/merged_512/'
+    train_input_dir = 'd:/db/getchu/merged_512/'
+    # train_input_dir = '/mnt/my_data/image_data/getchu/merged_512/'
     direction = 'BtoA'
 
     mgan = MGAN()
