@@ -109,3 +109,6 @@ checkpoint
 
 # pycharm settings
 .idea/
+
+# large model file(vgg)
+*.npy
