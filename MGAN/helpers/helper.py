@@ -51,7 +51,8 @@ class Dataset(object):
         self.image_max_value = 255
         self.crop_size = 512
         self.is_test = is_test
-        self.n_points = self.crop_size // 5
+        self.n_rand_pt = self.crop_size // 5
+        self.rand_roi_size = self.crop_size // 16
 
         # synchronize seed for image operations so that we do the same operations to both
         # input and output images
@@ -137,11 +138,10 @@ class Dataset(object):
         return r
 
     def spread_random_blur(self, img_color):
-        loc_x = np.random.randint(0, self.crop_size, self.n_points)
-        loc_y = np.random.randint(0, self.crop_size, self.n_points)
+        loc_x = np.random.randint(0, self.crop_size, self.n_rand_pt)
+        loc_y = np.random.randint(0, self.crop_size, self.n_rand_pt)
 
-        roi_size = self.crop_size // 16
-        roi_calc = roi_size // 2
+        roi_calc = self.rand_roi_size // 2
         max_boundary = self.crop_size - 1
         mask = np.zeros_like(img_color[:,:,0], dtype=np.uint8)
         np.squeeze(mask)
