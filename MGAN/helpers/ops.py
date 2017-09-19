@@ -1,4 +1,6 @@
+import os
 import tensorflow as tf
+import numpy as np
 
 
 def encoder(e_in, n_f, n_k, w_init, is_training, repeat=1, is_first_layer=False):
@@ -161,3 +163,84 @@ def discriminator(inputs, targets, reuse=False, is_training=True):
                                   kernel_initializer=w_init, use_bias=False)
 
         return logits
+
+
+def discriminator_vgg16(inputs, targets, reuse=False, is_training=True):
+    # inputs: sketch image(rgb) normalized to -1 ~ 1
+    # targets: color image(rgb) normalized to -1 ~ 1
+    VGG_MEAN = [103.939, 116.779, 123.68]
+
+    with tf.variable_scope('discriminator', reuse=reuse):
+        vgg16_npy_path = os.path.join(os.getcwd(), 'helpers/vgg16.npy')
+        data_dict = np.load(vgg16_npy_path, encoding='latin1').item()
+
+        # # resize images
+        # inputs_resized = tf.image.resize_images(inputs, size=[224, 224], method=tf.image.ResizeMethod.BILINEAR)
+        # targets_resized = tf.image.resize_images(targets, size=[224, 224], method=tf.image.ResizeMethod.BILINEAR)
+
+        # rescale & convert RGB => BGR to fit vgg form
+        inputs_rgb_scaled = (((inputs + 1.0) * 255.0) / 2.0)
+        targets_rgb_scaled = (((targets + 1.0) * 255.0) / 2.0)
+        inputs_red, inputs_green, inputs_blue = tf.split(axis=3, num_or_size_splits=3, value=inputs_rgb_scaled)
+        targets_red, targets_green, targets_blue = tf.split(axis=3, num_or_size_splits=3, value=targets_rgb_scaled)
+        inputs_bgr = tf.concat(axis=3, values=[
+            inputs_blue - VGG_MEAN[0],
+            inputs_green - VGG_MEAN[1],
+            inputs_red - VGG_MEAN[2]])
+        targets_bgr = tf.concat(axis=3, values=[
+            targets_blue - VGG_MEAN[0],
+            targets_green - VGG_MEAN[1],
+            targets_red - VGG_MEAN[2]])
+
+        def get_conv_filter(name):
+            return tf.constant(data_dict[name][0], name="filter")
+
+        def get_bias(name):
+            return tf.constant(data_dict[name][1], name="biases")
+
+        def conv_layer(bottom, name, is_first=False):
+            filt = get_conv_filter(name)
+            if is_first:
+                filt2 = get_conv_filter(name)
+                filt = tf.concat([filt, filt2], axis=2)
+
+            conv = tf.nn.conv2d(bottom, filt, [1, 1, 1, 1], padding='SAME')
+
+            conv_biases = get_bias(name)
+            bias = tf.nn.bias_add(conv, conv_biases)
+
+            relu = tf.nn.relu(bias)
+            return relu
+
+        # form final input
+        concat_inputs = tf.concat(values=[inputs_bgr, targets_bgr], axis=3)
+
+        # start stacking vgg layers
+        conv1_1 = conv_layer(concat_inputs, "conv1_1", is_first=True)
+        conv1_2 = conv_layer(conv1_1, "conv1_2")
+        pool1 = tf.nn.max_pool(conv1_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+        conv2_1 = conv_layer(pool1, "conv2_1")
+        conv2_2 = conv_layer(conv2_1, "conv2_2")
+        pool2 = tf.nn.max_pool(conv2_2, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+        conv3_1 = conv_layer(pool2, "conv3_1")
+        conv3_2 = conv_layer(conv3_1, "conv3_2")
+        conv3_3 = conv_layer(conv3_2, "conv3_3")
+        pool3 = tf.nn.max_pool(conv3_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+        conv4_1 = conv_layer(pool3, "conv4_1")
+        conv4_2 = conv_layer(conv4_1, "conv4_2")
+        conv4_3 = conv_layer(conv4_2, "conv4_3")
+        pool4 = tf.nn.max_pool(conv4_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+        conv5_1 = conv_layer(pool4, "conv5_1")
+        conv5_2 = conv_layer(conv5_1, "conv5_2")
+        conv5_3 = conv_layer(conv5_2, "conv5_3")
+        pool5 = tf.nn.max_pool(conv5_3, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+
+        logits = tf.layers.conv2d(pool5, filters=1, kernel_size=3, strides=1, padding='valid')
+
+        return logits
+
+
