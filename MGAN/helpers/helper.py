@@ -1,8 +1,7 @@
 import numpy as np
 import os
 import glob
-from PIL import Image
-from scipy.misc import imresize, toimage
+from scipy.misc import toimage
 
 import cv2
 
@@ -12,7 +11,8 @@ def preprocess_for_saving_image(im):
         im = np.squeeze(im, axis=0)
 
     # Scale to 0-255
-    im = (((im - im.min()) * 255) / (im.max() - im.min())).astype(np.uint8)
+    # im = (((im - im.min()) * 255) / (im.max() - im.min())).astype(np.uint8)
+    im = (((im + 1.0) * 255) / 2.0).astype(np.uint8)
 
     return im
 
@@ -96,11 +96,12 @@ class Dataset(object):
             b_image = img[:, width // 2:, :]
 
             # apply random flip, resize, random crop
-            random_val_flip = self.prng.uniform(0, 1)
-            offset_h = np.floor(self.prng.uniform(0, self.scale_to - self.crop_size + 1)).astype(np.int32)
-            offset_w = np.floor(self.prng.uniform(0, self.scale_to - self.crop_size + 1)).astype(np.int32)
-            a_image = self.transform(a_image, random_val_flip, offset_h, offset_w)
-            b_image = self.transform(b_image, random_val_flip, offset_h, offset_w)
+            if self.is_test is False:
+                random_val_flip = self.prng.uniform(0, 1)
+                offset_h = np.floor(self.prng.uniform(0, self.scale_to - self.crop_size + 1)).astype(np.int32)
+                offset_w = np.floor(self.prng.uniform(0, self.scale_to - self.crop_size + 1)).astype(np.int32)
+                a_image = self.transform(a_image, random_val_flip, offset_h, offset_w)
+                b_image = self.transform(b_image, random_val_flip, offset_h, offset_w)
 
             if self.direction == 'AtoB':
                 sketch, color = [a_image, b_image]
@@ -184,3 +185,37 @@ class Dataset(object):
     #     added = (added / self.image_max_value - 0.5) * 2
     #
     #     return added
+
+
+def create_test_set():
+    train_input_dir = 'd:/db/getchu/merged_512/'
+    # prepare dataset
+    train_dataset = Dataset(train_input_dir, direction='BtoA', is_test=True)
+
+    def get_image(loader, index):
+        batch_images_tuple = loader.get_image_by_index(index)
+        a = [x for x, y, z in batch_images_tuple]
+        b = [y for x, y, z in batch_images_tuple]
+        c = [z for x, y, z in batch_images_tuple]
+        a = np.array(a)
+        b = np.array(b)
+        c = np.array(c)
+
+        return a, b, c
+
+    save_dir = './test'
+    for ii in range(6):
+        sketch, color, hint = get_image(train_dataset, ii)
+        sketch = preprocess_for_saving_image(sketch)
+        color = preprocess_for_saving_image(color)
+        hint = preprocess_for_saving_image(hint)
+
+        sketch_fn = os.path.join(save_dir, 'sketch-{:02d}.png'.format(ii))
+        color_fn = os.path.join(save_dir, 'color-{:02d}.png'.format(ii))
+        hint_fn = os.path.join(save_dir, 'hint-{:02d}.png'.format(ii))
+
+        toimage(sketch, mode='RGB').save(sketch_fn)
+        toimage(color, mode='RGB').save(color_fn)
+        toimage(hint, mode='RGB').save(hint_fn)
+
+    return
