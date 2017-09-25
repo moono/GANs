@@ -4,7 +4,7 @@ import numpy as np
 
 from helpers.helper import Dataset, save_result
 from helpers.ops import generator, discriminator
-# from vgg16 import Vgg16
+from vgg.vgg16 import Vgg16
 
 
 class MGAN(object):
@@ -15,6 +15,7 @@ class MGAN(object):
         self.im_size = 512
         self.lmbda_l1 = 20.0
         self.lmbda_gp = 10.0
+        self.lmbda_ct = 0.0001
         self.mb_size = minibatch_size
         self.beta1 = 0.5
         self.learning_rate = 0.0002
@@ -30,17 +31,31 @@ class MGAN(object):
         self.dis_logit_real = discriminator(self.inputs_sketch, self.inputs_real, reuse=False, is_training=True)
         self.dis_logit_fake = discriminator(self.inputs_sketch, self.gen_out, reuse=True, is_training=True)
 
+        # create vgg16
+        vgg16npy_path = './vgg/vgg16.npy'
+        self.vgg = Vgg16(vgg16npy_path)
+        self.resized_inputs_real = tf.image.resize_images(self.inputs_real, size=(self.vgg.im_size, self.vgg.im_size))
+        self.resized_gen_out = tf.image.resize_images(self.gen_out, size=(self.vgg.im_size, self.vgg.im_size))
+
+        # run on vgg16
+        conv1_2_real, conv2_2_real, conv3_3_real, conv4_3_real, conv5_3_real = self.vgg.run(self.resized_inputs_real)
+        conv1_2_gen, conv2_2_gen, conv3_3_gen, conv4_3_gen, conv5_3_gen = self.vgg.run(self.resized_gen_out)
+
 
         # model loss computation
         self.d_loss, self.g_loss = self.model_loss(self.dis_logit_real, self.dis_logit_fake,
-                                                   self.inputs_sketch, self.inputs_real, self.gen_out, self.inputs_pt)
+                                                   self.inputs_sketch, self.inputs_real, self.gen_out, self.inputs_pt,
+                                                   conv1_2_real, conv2_2_real, conv3_3_real, conv4_3_real, conv5_3_real,
+                                                   conv1_2_gen, conv2_2_gen, conv3_3_gen, conv4_3_gen, conv5_3_gen)
 
         # model optimizer
         self.d_train_opt, self.g_train_opt = self.model_opt(self.d_loss, self.g_loss)
 
 
 
-    def model_loss(self, dis_logit_real, dis_logit_fake, inputs_sketch, inputs_real, gen_out, inputs_pt):
+    def model_loss(self, dis_logit_real, dis_logit_fake, inputs_sketch, inputs_real, gen_out, inputs_pt,
+                   conv1_2_real, conv2_2_real, conv3_3_real, conv4_3_real, conv5_3_real,
+                   conv1_2_gen, conv2_2_gen, conv3_3_gen, conv4_3_gen, conv5_3_gen):
         # shorten cross entropy loss calculation
         def celoss_ones(logits):
             return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.ones_like(logits)))
@@ -63,10 +78,20 @@ class MGAN(object):
 
         d_loss = d_loss_real + d_loss_fake + self.lmbda_gp * gradient_penalty
 
+
+        # compute vgg feature layer losses
+        conv1_2_loss = tf.losses.mean_squared_error(conv1_2_real, conv1_2_gen)
+        conv2_2_loss = tf.losses.mean_squared_error(conv2_2_real, conv2_2_gen)
+        conv3_3_loss = tf.losses.mean_squared_error(conv3_3_real, conv3_3_gen)
+        conv4_3_loss = tf.losses.mean_squared_error(conv4_3_real, conv4_3_gen)
+        conv5_3_loss = tf.losses.mean_squared_error(conv5_3_real, conv5_3_gen)
+        content_loss = conv1_2_loss + conv2_2_loss + conv3_3_loss + conv4_3_loss + conv5_3_loss
+
         # generator losses
         g_loss_gan = celoss_ones(dis_logit_fake)
-        g_loss_l1 = tf.reduce_mean(tf.abs(inputs_real - gen_out))
-        g_loss = self.lmbda_l1 * g_loss_l1 + g_loss_gan
+        # g_loss_l1 = tf.reduce_mean(tf.abs(inputs_real - gen_out))
+        # g_loss = self.lmbda_ct * content_loss + self.lmbda_l1 * g_loss_l1 + g_loss_gan
+        g_loss = self.lmbda_ct * content_loss + g_loss_gan
 
         return d_loss, g_loss
 
@@ -172,8 +197,9 @@ def train(net, epochs, batch_size, train_dir, val_dir, direction, print_every=30
 def test():
     test_dir = './test'
 
+    import glob
     import cv2
-    from .helpers.helper import preprocess_for_saving_image
+    from helpers.helper import preprocess_for_saving_image
     from scipy.misc import toimage
 
     def normalize(img):
@@ -192,6 +218,11 @@ def test():
         toimage(concated_image, mode='RGB').save(image_fn)
         return
 
+    # prepare testsets
+    sketch_fn_list = glob.glob(os.path.join(test_dir, 'sketch-*.png'))
+    color_fn_list = glob.glob(os.path.join(test_dir, 'color-*.png'))
+    hint_fn_list = glob.glob(os.path.join(test_dir, 'hint-*.png'))
+    hand_hint_fn_list = glob.glob(os.path.join(test_dir, 'hand-hint-*.png'))
 
     # create network
     mgan = MGAN()
@@ -204,13 +235,9 @@ def test():
         # saver.restore(sess, ckpt_fn)
         saver.restore(sess, tf.train.latest_checkpoint('./checkpoints'))
 
-        for ii in range(6):
-            print('starting {:d}...'.format(ii))
-
-            sketch_fn = os.path.join(test_dir, 'sketch-{:02d}.png'.format(ii))
-            color_fn = os.path.join(test_dir, 'color-{:02d}.png'.format(ii))
-            hint_fn = os.path.join(test_dir, 'hint-{:02d}.png'.format(ii))
-            hand_hint_fn = os.path.join(test_dir, 'hand-hint-{:02d}.png'.format(ii))
+        for ii, (sketch_fn, color_fn, hint_fn, hand_hint_fn) in enumerate(
+                zip(sketch_fn_list, color_fn_list, hint_fn_list, hand_hint_fn_list)):
+            print('running {:d}...'.format(ii))
 
             # open with opencv
             sketch_img = cv2.imread(sketch_fn)
@@ -266,7 +293,7 @@ def main():
     batch_size = 1
     train_dir = 'd:/db/getchu/merged_512/'
     # train_dir = '/mnt/my_data/image_data/getchu/merged_512/'
-    val_dir = '/mnt/my_data/image_data/getchu/val/'
+    val_dir = 'd:/db/getchu/val/'
     direction = 'BtoA'
 
     mgan = MGAN()
@@ -276,5 +303,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
-    # test()
+    # main()
+    test()
