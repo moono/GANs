@@ -5,79 +5,7 @@ import json
 from pprint import pprint
 
 import utils
-
-
-def generator(z, y, reuse=False, is_training=True):
-    with tf.variable_scope('generator', reuse=reuse):
-        alpha = 0.2
-        n_filter = 512
-        n_kernel = 4
-        w_init = tf.contrib.layers.xavier_initializer()
-
-        # 0. concatenate inputs
-        # z: [batch size, 100], y: [batch size, 10]
-        inputs = tf.concat([z, y], axis=1)
-
-        # 1. reshape z-vector to fit as 2d shape image with fully connected layer
-        l1 = tf.layers.dense(inputs, units=3 * 3 * n_filter, kernel_initializer=w_init)
-        l1 = tf.reshape(l1, shape=[-1, 3, 3, n_filter])
-        l1 = tf.maximum(alpha * l1, l1)
-
-        # 2. layer2 - [batch size, 3, 3, 512] ==> [batch size, 7, 7, 512]
-        l2 = tf.layers.conv2d_transpose(l1, filters=n_filter // 2, kernel_size=3, strides=2, padding='valid',
-                                        kernel_initializer=w_init)
-        l2 = tf.layers.batch_normalization(l2, training=is_training)
-        l2 = tf.maximum(alpha * l2, l2)
-
-        # 3. layer3 - [batch size, 7, 7, 256] ==> [batch size, 14, 14, 128]
-        l3 = tf.layers.conv2d_transpose(l2, filters=n_filter // 4, kernel_size=n_kernel, strides=2, padding='same',
-                                        kernel_initializer=w_init)
-        l3 = tf.layers.batch_normalization(l3, training=is_training)
-        l3 = tf.maximum(alpha * l3, l3)
-
-        # 4. layer4 - [batch size, 14, 14, 128] ==> [batch size, 28, 28, 1]
-        l4 = tf.layers.conv2d_transpose(l3, filters=1, kernel_size=n_kernel, strides=2, padding='same',
-                                        kernel_initializer=w_init)
-        out = tf.tanh(l4)
-        return out
-
-
-def discriminator(x, y, reuse=False, is_training=True):
-    with tf.variable_scope('discriminator', reuse=reuse):
-        alpha = 0.2
-        n_filter = 64
-        n_kernel = 4
-        w_init = tf.contrib.layers.xavier_initializer()
-
-        # 0. concatenate inputs
-        # x: [batch size, 28, 28, 1], y: [batch size, 10]
-        # make y as same dimension as x first
-        y_tiled = tf.expand_dims(y, axis=1)
-        y_tiled = tf.expand_dims(y_tiled, axis=1)
-        y_tiled = tf.tile(y_tiled, multiples=[1, 28, 28, 1])
-        inputs = tf.concat([x, y_tiled], axis=3)
-
-        # 1. layer 1 - [batch size, 28, 28, 1] ==> [batch size, 14, 14, 64]
-        l1 = tf.layers.conv2d(inputs, filters=n_filter, kernel_size=n_kernel, strides=2, padding='same',
-                              kernel_initializer=w_init)
-        l1 = tf.maximum(alpha * l1, l1)
-
-        # 2. layer 2 - [batch size, 14, 14, 64] ==> [batch size, 7, 7, 128]
-        l2 = tf.layers.conv2d(l1, filters=n_filter * 2, kernel_size=n_kernel, strides=2, padding='same',
-                              kernel_initializer=w_init)
-        l2 = tf.layers.batch_normalization(l2, training=is_training)
-        l2 = tf.maximum(alpha * l2, l2)
-
-        # 3. layer 3 - [batch size, 7, 7, 128] ==> [batch size, 4, 4, 256]
-        l3 = tf.layers.conv2d(l2, filters=n_filter * 4, kernel_size=n_kernel, strides=2, padding='same',
-                              kernel_initializer=w_init)
-        l3 = tf.layers.batch_normalization(l3, training=is_training)
-        l3 = tf.maximum(alpha * l3, l3)
-
-        # 4. flatten layer & and finalize
-        l4 = tf.reshape(l3, shape=[-1, 4, 4, 256])
-        l4 = tf.layers.dense(l4, units=1, kernel_initializer=w_init)
-        return l4
+import network
 
 
 class CGAN(object):
@@ -114,9 +42,9 @@ class CGAN(object):
         self.inputs_z = tf.placeholder(tf.float32, [None, self.z_dim], name='inputs_z')
 
         # create generator & discriminator
-        self.g_out = generator(self.inputs_z, self.inputs_y, reuse=False, is_training=True)
-        self.d_real_logits = discriminator(self.inputs_x, self.inputs_y, reuse=False, is_training=True)
-        self.d_fake_logits = discriminator(self.g_out, self.inputs_y, reuse=True, is_training=True)
+        self.g_out = network.generator(self.inputs_z, y=self.inputs_y, reuse=False, is_training=True)
+        self.d_real_logits = network.discriminator(self.inputs_x, y=self.inputs_y, reuse=False, is_training=True)
+        self.d_fake_logits = network.discriminator(self.g_out, y=self.inputs_y, reuse=True, is_training=True)
 
         # compute model loss
         self.d_loss, self.g_loss = self.model_loss(self.d_real_logits, self.d_fake_logits)
@@ -199,7 +127,7 @@ class CGAN(object):
 
                 # save generation results at every epochs
                 if e % self.save_every == 0:
-                    val_out = sess.run(generator(self.inputs_z, self.inputs_y, reuse=True, is_training=False),
+                    val_out = sess.run(network.generator(self.inputs_z, y=self.inputs_y, reuse=True, is_training=False),
                                        feed_dict={self.inputs_y: fixed_y, self.inputs_z: fixed_z})
                     image_fn = os.path.join(self.assets_dir, '{:s}-val-e{:03d}.png'.format(self.dataset_type, e+1))
                     self.validation(val_out, image_fn, color_mode='L')
