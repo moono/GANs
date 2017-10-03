@@ -215,7 +215,7 @@ class GAN(object):
 
 def main():
     # get training parameters
-    with open('gan-params.json') as f:
+    with open('params.json') as f:
         gan_params = json.load(f)
 
     model_name = 'GAN'
