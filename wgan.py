@@ -86,6 +86,7 @@ class WGAN(object):
         # tunable parameters
         self.z_dim = 100
         self.learning_rate = 5e-5
+        self.d_train_freq = 5
         self.epochs = epochs
         self.batch_size = 128
         self.print_every = 30
@@ -141,7 +142,6 @@ class WGAN(object):
     def train(self):
         val_size = self.val_block_size * self.val_block_size
         steps = 0
-        d_train_freq = 5
 
         with tf.Session() as sess:
             # reset tensorflow variables
@@ -165,11 +165,10 @@ class WGAN(object):
                         self.inputs_z: batch_z
                     }
 
-                    # Run optimizers
+                    # Run optimizers (train D more than G)
                     _ = sess.run(self.d_weight_clip)
                     _ = sess.run(self.d_opt, feed_dict=fd)
-
-                    if ii % d_train_freq == 0:
+                    if ii % self.d_train_freq == 0:
                         _ = sess.run(self.g_opt, feed_dict=fd)
 
                     # print losses
