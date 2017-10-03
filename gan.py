@@ -90,7 +90,7 @@ class GAN(object):
         self.batch_size = 128
         self.print_every = 30
         self.save_every = 1
-        self.val_block_size = 5
+        self.val_block_size = 10
 
         # start building graphs
         tf.reset_default_graph()

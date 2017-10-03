@@ -17,5 +17,5 @@ def get_mnist(mnist_base_dir, mnist_type):
     if not (mnist_type == 'original-MNIST' or mnist_type == 'fashion-MNIST'):
         raise ValueError('Either "original-MNIST" or "fashion-MNIST"')
 
-    mnist = input_data.read_data_sets(os.path.join(mnist_base_dir, mnist_type))
+    mnist = input_data.read_data_sets(os.path.join(mnist_base_dir, mnist_type), one_hot=True)
     return mnist
