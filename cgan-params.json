@@ -1,0 +1,10 @@
+[
+  {
+    "mnist-type": "original-MNIST",
+    "epochs": 30
+  },
+  {
+    "mnist-type": "fashion-MNIST",
+    "epochs": 30
+  }
+]
