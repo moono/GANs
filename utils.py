@@ -1,5 +1,6 @@
 import os
 import tensorflow as tf
+import numpy as np
 from tensorflow.examples.tutorials.mnist import input_data
 
 
@@ -10,6 +11,10 @@ def celoss_ones(logits):
 
 def celoss_zeros(logits):
     return tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=tf.zeros_like(logits)))
+
+
+def get_perturbed_batch(minibatch):
+    return minibatch + 0.5 * minibatch.std() * np.random.random(minibatch.shape)
 
 
 # mnist datset loader
