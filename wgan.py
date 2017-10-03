@@ -25,7 +25,7 @@ class WGAN(object):
 
         # tunable parameters
         self.z_dim = 100
-        self.learning_rate = 5e-5
+        self.learning_rate = 0.0002
         self.d_train_freq = 5
         self.epochs = epochs
         self.batch_size = 128
@@ -70,9 +70,10 @@ class WGAN(object):
         g_vars = [var for var in t_vars if var.name.startswith('generator')]
 
         # Optimize
+        beta1 = 0.5
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-            d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate).minimize(d_loss, var_list=d_vars)
-            g_train_opt = tf.train.RMSPropOptimizer(self.learning_rate).minimize(g_loss, var_list=g_vars)
+            d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(d_loss, var_list=d_vars)
+            g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(g_loss, var_list=g_vars)
 
         # weight clipping
         d_weight_clip = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_vars]
