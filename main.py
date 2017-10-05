@@ -26,13 +26,13 @@ def main():
         print('Training {:s} with epochs: {:d}, dataset: {:s}'.format(model_name, epochs, mnist_type))
         net = None
 
-        if model_name is 'gan':
+        if model_name == 'gan':
             net = gan.GAN(model_name, mnist_type, mnist, epochs)
-        elif model_name is 'cgan':
+        elif model_name == 'cgan':
             net = cgan.CGAN(model_name, mnist_type, mnist, epochs)
-        elif model_name is 'wgan':
+        elif model_name == 'wgan':
             net = wgan.WGAN(model_name, mnist_type, mnist, epochs)
-        elif model_name is 'wgan-gp':
+        elif model_name == 'wgan-gp':
             net = wgan_gp.WGANGP(model_name, mnist_type, mnist, epochs)
         else:
             net = None
