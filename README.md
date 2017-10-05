@@ -1,13 +1,29 @@
 # GANs
-Study Generative Adversarial Networks
+* Generative Adversarial Networks
+  * GAN
+  * CGAN
+  * WGAN
+  * WGAN-GP
+  * DRAGAN
+
+## MNIST Results
+| Type | Epochs 1 | Epochs 15 | Epochs 30 |
+| ---- | -------- | --------- | --------- |
+| GAN | ![](./results/gan/original-MNIST-val-e001.png) | ![](./results/gan/original-MNIST-val-e015.png) | ![](./results/gan/original-MNIST-val-e030.png) |
+| CGAN | ![](./results/cgan/original-MNIST-val-e001.png) | ![](./results/cgan/original-MNIST-val-e015.png) | ![](./results/cgan/original-MNIST-val-e030.png) |
+| WGAN | ![](./results/wgan/original-MNIST-val-e001.png) | ![](./results/wgan/original-MNIST-val-e015.png) | ![](./results/wgan/original-MNIST-val-e030.png) |
+| WGAN-GP | ![](./results/wgan-gp/original-MNIST-val-e001.png) | ![](./results/wgan-gp/original-MNIST-val-e015.png) | ![](./results/wgan-gp/original-MNIST-val-e030.png) |
+| DRAGAN | ![](./results/dragan/original-MNIST-val-e001.png) | ![](./results/vanilla-gan/original-MNIST-val-e015.png) | ![](./results/vanilla-gan/original-MNIST-val-e030.png) |
+  
+
 
 ## Prerequisites
 
 * Conda environment in Windows 10 & Ubuntu 14.04 **(Currently pytorch is only tested on Ubuntu)**
 * Key components
-  * python=3.5
-  * tensorflow=1.2.1
-  * pytorch=0.1.12
+  * python = 3.5
+  * tensorflow >= 1.2.1
+  * pytorch = 0.1.12
 
 ```shell
 # Windows
@@ -27,7 +43,8 @@ conda install pytorch torchvision cuda80 -c soumith
 
 ## Downloading data-sets
 
-* MNIST
+* MNIST & fashion-MNIST
+  * fashion-MNIST: https://github.com/zalandoresearch/fashion-mnist
 ```python
 # tensorflow
 from tensorflow.examples.tutorials.mnist import input_data

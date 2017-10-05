@@ -9,9 +9,8 @@ import network
 
 
 class WGANGP(object):
-    def __init__(self, dataset_type, mnist_loader, epochs):
+    def __init__(self, name, dataset_type, mnist_loader, epochs):
         # prepare directories
-        name = 'wasserstein-gan-with-gradient-penalty'
         self.assets_dir = './assets/{:s}'.format(name)
         self.ckpt_dir = './checkpoints/{:s}'.format(name)
         if not os.path.isdir(self.assets_dir):
@@ -176,7 +175,7 @@ def main():
     with open('params.json') as f:
         gan_params = json.load(f)
 
-    model_name = 'WGANGP'
+    model_name = 'wgan-gp'
     print('--{:s} params--'.format(model_name))
     pprint(gan_params)
 
@@ -187,7 +186,7 @@ def main():
         mnist = utils.get_mnist(dataset_base_dir, mnist_type)
 
         print('Training {:s} with epochs: {:d}, dataset: {:s}'.format(model_name, epochs, mnist_type))
-        net = WGANGP(mnist_type, mnist, epochs)
+        net = WGANGP(model_name, mnist_type, mnist, epochs)
         net.train()
 
     return
