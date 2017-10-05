@@ -1,8 +1,6 @@
 import os
 import numpy as np
 import tensorflow as tf
-import json
-from pprint import pprint
 
 import utils
 import network
@@ -129,62 +127,5 @@ class CGAN(object):
                     val_out = sess.run(network.generator(self.inputs_z, y=self.inputs_y, reuse=True, is_training=False),
                                        feed_dict={self.inputs_y: fixed_y, self.inputs_z: fixed_z})
                     image_fn = os.path.join(self.assets_dir, '{:s}-val-e{:03d}.png'.format(self.dataset_type, e+1))
-                    self.validation(val_out, image_fn, color_mode='L')
+                    utils.validation(val_out, self.val_block_size, image_fn, color_mode='L')
         return
-
-    def validation(self, val_out, image_fn, color_mode):
-        from scipy.misc import toimage
-
-        def preprocess(img):
-            img = ((img + 1.0) * 127.5).astype(np.uint8)
-            return img
-
-        preprocesed = preprocess(val_out)
-        final_image = np.array([])
-        single_row = np.array([])
-        for b in range(val_out.shape[0]):
-            # concat image into a row
-            if single_row.size == 0:
-                single_row = preprocesed[b, :, :, :]
-            else:
-                single_row = np.concatenate((single_row, preprocesed[b, :, :, :]), axis=1)
-
-            # concat image row to final_image
-            if (b+1) % self.val_block_size == 0:
-                if final_image.size == 0:
-                    final_image = single_row
-                else:
-                    final_image = np.concatenate((final_image, single_row), axis=0)
-
-                # reset single row
-                single_row = np.array([])
-
-        if final_image.shape[2] == 1:
-            final_image = np.squeeze(final_image, axis=2)
-        toimage(final_image, mode=color_mode).save(image_fn)
-
-
-def main():
-    # get training parameters
-    with open('params.json') as f:
-        gan_params = json.load(f)
-
-    model_name = 'cgan'
-    print('--{:s} params--'.format(model_name))
-    pprint(gan_params)
-
-    dataset_base_dir = './data_set'
-    for param in gan_params:
-        epochs = int(param["epochs"])
-        mnist_type = param["mnist-type"]
-        mnist = utils.get_mnist(dataset_base_dir, mnist_type)
-
-        print('Training {:s} with epochs: {:d}, dataset: {:s}'.format(model_name, epochs, mnist_type))
-        net = CGAN(model_name, mnist_type, mnist, epochs)
-        net.train()
-
-    return
-
-
-if __name__ == '__main__':
-    main()

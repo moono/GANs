@@ -1,9 +1,41 @@
 [
   {
+    "model-name": "gan",
     "mnist-type": "original-MNIST",
     "epochs": 30
   },
   {
+    "model-name": "gan",
+    "mnist-type": "fashion-MNIST",
+    "epochs": 30
+  },
+  {
+    "model-name": "cgan",
+    "mnist-type": "original-MNIST",
+    "epochs": 30
+  },
+  {
+    "model-name": "cgan",
+    "mnist-type": "fashion-MNIST",
+    "epochs": 30
+  },
+  {
+    "model-name": "wgan",
+    "mnist-type": "original-MNIST",
+    "epochs": 30
+  },
+  {
+    "model-name": "wgan",
+    "mnist-type": "fashion-MNIST",
+    "epochs": 30
+  },
+  {
+    "model-name": "wgan-gp",
+    "mnist-type": "original-MNIST",
+    "epochs": 30
+  },
+  {
+    "model-name": "wgan-gp",
     "mnist-type": "fashion-MNIST",
     "epochs": 30
   }
