@@ -38,8 +38,8 @@ class GAN(object):
 
         # create generator & discriminator
         self.g_out = network.generator(self.inputs_z, reuse=False, is_training=True)
-        self.d_real_logits = network.discriminator(self.inputs_x, reuse=False, is_training=True)
-        self.d_fake_logits = network.discriminator(self.g_out, reuse=True, is_training=True)
+        self.d_real_logits, _ = network.discriminator(self.inputs_x, reuse=False, is_training=True)
+        self.d_fake_logits, _ = network.discriminator(self.g_out, reuse=True, is_training=True)
 
         # compute model loss
         self.d_loss, self.g_loss = self.model_loss(self.d_real_logits, self.d_fake_logits)

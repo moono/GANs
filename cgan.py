@@ -40,8 +40,8 @@ class CGAN(object):
 
         # create generator & discriminator
         self.g_out = network.generator(self.inputs_z, y=self.inputs_y, reuse=False, is_training=True)
-        self.d_real_logits = network.discriminator(self.inputs_x, y=self.inputs_y, reuse=False, is_training=True)
-        self.d_fake_logits = network.discriminator(self.g_out, y=self.inputs_y, reuse=True, is_training=True)
+        self.d_real_logits, _ = network.discriminator(self.inputs_x, y=self.inputs_y, reuse=False, is_training=True)
+        self.d_fake_logits, _ = network.discriminator(self.g_out, y=self.inputs_y, reuse=True, is_training=True)
 
         # compute model loss
         self.d_loss, self.g_loss = self.model_loss(self.d_real_logits, self.d_fake_logits)

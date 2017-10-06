@@ -74,7 +74,28 @@ def discriminator(x, y=None, reuse=False, is_training=True):
         l3 = tf.layers.batch_normalization(l3, training=is_training)
         l3 = tf.maximum(alpha * l3, l3)
 
-        # 4. flatten layer & and finalize
-        l4 = tf.reshape(l3, shape=[-1, 4, 4, 256])
-        l4 = tf.layers.dense(l4, units=1, kernel_initializer=w_init)
-        return l4
+        # 4. flatten layer & fully connected layer
+        l4 = tf.reshape(l3, shape=[-1, 4 * 4 * 256])
+        l4 = tf.layers.dense(l4, units=1024, kernel_initializer=w_init)
+        l4 = tf.layers.batch_normalization(l4, training=is_training)
+        l4 = tf.maximum(alpha * l4, l4)
+
+        # final logits
+        logits = tf.layers.dense(l4, units=1, kernel_initializer=w_init)
+
+        return logits, l4
+
+
+def classifier(x, out_dim, reuse=False, is_training=True):
+    with tf.variable_scope("classifier", reuse=reuse):
+        alpha = 0.2
+
+        # 1. layer 1 - fully connected layer
+        l1 = tf.layers.dense(x, 128)
+        l1 = tf.layers.batch_normalization(l1, training=is_training)
+        l1 = tf.maximum(alpha * l1, l1)
+
+        # final logits
+        logits = tf.layers.dense(l1, out_dim)
+
+        return logits
