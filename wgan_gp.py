@@ -63,12 +63,12 @@ class WGANGP(object):
         gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
 
         # discriminator loss
-        d_loss_real = tf.reduce_mean(d_real_logits)
-        d_loss_fake = -tf.reduce_mean(d_fake_logits)
+        d_loss_real = -tf.reduce_mean(d_real_logits)
+        d_loss_fake = tf.reduce_mean(d_fake_logits)
         d_loss = d_loss_real + d_loss_fake + lmbd_gp * gradient_penalty
 
         # generator loss
-        g_loss = tf.reduce_mean(d_fake_logits)
+        g_loss = -tf.reduce_mean(d_fake_logits)
         return d_loss, g_loss
 
     def model_opt(self, d_loss, g_loss):

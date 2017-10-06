@@ -6,7 +6,7 @@ import utils
 import network
 
 
-class WGAN(object):
+class DRAGAN(object):
     def __init__(self, name, dataset_type, mnist_loader, epochs):
         # prepare directories
         self.assets_dir = './assets/{:s}'.format(name)
@@ -23,7 +23,7 @@ class WGAN(object):
         # tunable parameters
         self.z_dim = 100
         self.learning_rate = 0.0002
-        self.d_train_freq = 5
+        self.lmbd_gp = 0.25
         self.epochs = epochs
         self.batch_size = 128
         self.print_every = 30
@@ -35,6 +35,7 @@ class WGAN(object):
 
         # create placeholders
         self.inputs_x = tf.placeholder(tf.float32, [None, 28, 28, 1], name='inputs_x')
+        self.inputs_p = tf.placeholder(tf.float32, [None, 28, 28, 1], name='inputs_p')
         self.inputs_z = tf.placeholder(tf.float32, [None, self.z_dim], name='inputs_z')
 
         # create generator & discriminator
@@ -43,21 +44,31 @@ class WGAN(object):
         self.d_fake_logits = network.discriminator(self.g_out, reuse=True, is_training=True)
 
         # compute model loss
-        self.d_loss, self.g_loss = self.model_loss(self.d_real_logits, self.d_fake_logits)
+        self.d_loss, self.g_loss = self.model_loss(self.d_real_logits, self.d_fake_logits,
+                                                   self.inputs_x, self.inputs_p, self.lmbd_gp)
 
         # model optimizer
-        self.d_opt, self.g_opt, self.d_weight_clip = self.model_opt(self.d_loss, self.g_loss)
+        self.d_opt, self.g_opt = self.model_opt(self.d_loss, self.g_loss)
         return
 
     @ staticmethod
-    def model_loss(d_real_logits, d_fake_logits):
+    def model_loss(d_real_logits, d_fake_logits, inputs_x, inputs_p, lmbd_gp):
+        # compute gradient penalty
+        alpha = tf.random_uniform(shape=[], minval=0., maxval=1.)
+        differences = inputs_p - inputs_x
+        interpolated = inputs_x + (alpha * differences)
+        d_interpolate_logits = network.discriminator(interpolated, reuse=True, is_training=True)
+        gradients = tf.gradients(d_interpolate_logits, [interpolated])[0]
+        slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
+        gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
+
         # discriminator loss
-        d_loss_real = -tf.reduce_mean(d_real_logits)
-        d_loss_fake = tf.reduce_mean(d_fake_logits)
-        d_loss = d_loss_real + d_loss_fake
+        d_loss_real = utils.celoss_ones(d_real_logits)
+        d_loss_fake = utils.celoss_zeros(d_fake_logits)
+        d_loss = d_loss_real + d_loss_fake + lmbd_gp * gradient_penalty
 
         # generator loss
-        g_loss = -tf.reduce_mean(d_fake_logits)
+        g_loss = utils.celoss_ones(d_fake_logits)
         return d_loss, g_loss
 
     def model_opt(self, d_loss, g_loss):
@@ -72,10 +83,7 @@ class WGAN(object):
             d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(d_loss, var_list=d_vars)
             g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(g_loss, var_list=g_vars)
 
-        # weight clipping
-        d_weight_clip = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_vars]
-
-        return d_train_opt, g_train_opt, d_weight_clip
+        return d_train_opt, g_train_opt
 
     def train(self):
         val_size = self.val_block_size * self.val_block_size
@@ -95,25 +103,27 @@ class WGAN(object):
                     batch_x = np.reshape(batch_x, (-1, 28, 28, 1))
                     batch_x = batch_x * 2.0 - 1.0
 
+                    # purturb inputs
+                    batch_p = utils.get_perturbed_batch(batch_x)
+
                     # Sample random noise for G
                     batch_z = np.random.uniform(-1, 1, size=(self.batch_size, self.z_dim))
 
                     fd = {
                         self.inputs_x: batch_x,
+                        self.inputs_p: batch_p,
                         self.inputs_z: batch_z
                     }
 
-                    # Run optimizers (train D more than G)
+                    # Run optimizers
                     _ = sess.run(self.d_opt, feed_dict=fd)
-                    _ = sess.run(self.d_weight_clip)
-                    if ii % self.d_train_freq == 0:
-                        _ = sess.run(self.g_opt, feed_dict=fd)
+                    _ = sess.run(self.g_opt, feed_dict=fd)
 
                     # print losses
                     if steps % self.print_every == 0:
                         # At the end of each epoch, get the losses and print them out
-                        train_loss_d = self.d_loss.eval({self.inputs_x: batch_x, self.inputs_z: batch_z})
-                        train_loss_g = self.g_loss.eval({self.inputs_z: batch_z})
+                        train_loss_d = self.d_loss.eval(fd)
+                        train_loss_g = self.g_loss.eval(fd)
 
                         print("Epoch {}/{}...".format(e + 1, self.epochs),
                               "Discriminator Loss: {:.4f}...".format(train_loss_d),

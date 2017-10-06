@@ -13,7 +13,7 @@
 | CGAN | ![](./results/cgan/original-MNIST-val-e001.png) | ![](./results/cgan/original-MNIST-val-e015.png) | ![](./results/cgan/original-MNIST-val-e030.png) |
 | WGAN | ![](./results/wgan/original-MNIST-val-e001.png) | ![](./results/wgan/original-MNIST-val-e015.png) | ![](./results/wgan/original-MNIST-val-e030.png) |
 | WGAN-GP | ![](./results/wgan-gp/original-MNIST-val-e001.png) | ![](./results/wgan-gp/original-MNIST-val-e015.png) | ![](./results/wgan-gp/original-MNIST-val-e030.png) |
-| DRAGAN | ![](./results/dragan/original-MNIST-val-e001.png) | ![](./results/vanilla-gan/original-MNIST-val-e015.png) | ![](./results/vanilla-gan/original-MNIST-val-e030.png) |
+| DRAGAN | ![](./results/dragan/original-MNIST-val-e001.png) | ![](./results/dragan/original-MNIST-val-e015.png) | ![](./results/dragan/original-MNIST-val-e030.png) |
   
 
 

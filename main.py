@@ -6,6 +6,7 @@ import gan
 import cgan
 import wgan
 import wgan_gp
+import dragan
 
 
 def main():
@@ -34,6 +35,8 @@ def main():
             net = wgan.WGAN(model_name, mnist_type, mnist, epochs)
         elif model_name == 'wgan-gp':
             net = wgan_gp.WGANGP(model_name, mnist_type, mnist, epochs)
+        elif model_name == 'dragan':
+            net = dragan.DRAGAN(model_name, mnist_type, mnist, epochs)
         else:
             net = None
 
