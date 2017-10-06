@@ -57,7 +57,7 @@ class WGANGP(object):
         alpha = tf.random_uniform(shape=[], minval=0., maxval=1.)
         differences = g_out - inputs_x
         interpolated = inputs_x + (alpha * differences)
-        d_interpolate_logits = network.discriminator(interpolated, reuse=True, is_training=True)
+        d_interpolate_logits, _ = network.discriminator(interpolated, reuse=True, is_training=True)
         gradients = tf.gradients(d_interpolate_logits, [interpolated])[0]
         slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
         gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
