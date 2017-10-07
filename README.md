@@ -10,10 +10,21 @@
 | Type | Epochs 1 | Epochs 15 | Epochs 30 |
 | ---- | -------- | --------- | --------- |
 | GAN | ![](./results/gan/original-MNIST-val-e001.png) | ![](./results/gan/original-MNIST-val-e015.png) | ![](./results/gan/original-MNIST-val-e030.png) |
-| CGAN | ![](./results/cgan/original-MNIST-val-e001.png) | ![](./results/cgan/original-MNIST-val-e015.png) | ![](./results/cgan/original-MNIST-val-e030.png) |
 | WGAN | ![](./results/wgan/original-MNIST-val-e001.png) | ![](./results/wgan/original-MNIST-val-e015.png) | ![](./results/wgan/original-MNIST-val-e030.png) |
 | WGAN-GP | ![](./results/wgan-gp/original-MNIST-val-e001.png) | ![](./results/wgan-gp/original-MNIST-val-e015.png) | ![](./results/wgan-gp/original-MNIST-val-e030.png) |
 | DRAGAN | ![](./results/dragan/original-MNIST-val-e001.png) | ![](./results/dragan/original-MNIST-val-e015.png) | ![](./results/dragan/original-MNIST-val-e030.png) |
+| CGAN | ![](./results/cgan/original-MNIST-val-e001.png) | ![](./results/cgan/original-MNIST-val-e015.png) | ![](./results/cgan/original-MNIST-val-e030.png) |
+| ACGAN | ![](./results/acgan/original-MNIST-val-e001.png) | ![](./results/acgan/original-MNIST-val-e015.png) | ![](./results/acgan/original-MNIST-val-e030.png) |
+
+## Fashion-MNIST Results
+| Type | Epochs 1 | Epochs 15 | Epochs 30 |
+| ---- | -------- | --------- | --------- |
+| GAN | ![](./results/gan/fashion-MNIST-val-e001.png) | ![](./results/gan/fashion-MNIST-val-e015.png) | ![](./results/gan/fashion-MNIST-val-e030.png) |
+| WGAN | ![](./results/wgan/fashion-MNIST-val-e001.png) | ![](./results/wgan/fashion-MNIST-val-e015.png) | ![](./results/wgan/fashion-MNIST-val-e030.png) |
+| WGAN-GP | ![](./results/wgan-gp/fashion-MNIST-val-e001.png) | ![](./results/wgan-gp/fashion-MNIST-val-e015.png) | ![](./results/wgan-gp/fashion-MNIST-val-e030.png) |
+| DRAGAN | ![](./results/dragan/fashion-MNIST-val-e001.png) | ![](./results/dragan/fashion-MNIST-val-e015.png) | ![](./results/dragan/fashion-MNIST-val-e030.png) |
+| CGAN | ![](./results/cgan/fashion-MNIST-val-e001.png) | ![](./results/cgan/fashion-MNIST-val-e015.png) | ![](./results/cgan/fashion-MNIST-val-e030.png) |
+| ACGAN | ![](./results/acgan/fashion-MNIST-val-e001.png) | ![](./results/acgan/fashion-MNIST-val-e015.png) | ![](./results/acgan/fashion-MNIST-val-e030.png) |
   
 
 
