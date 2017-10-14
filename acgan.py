@@ -40,23 +40,23 @@ class ACGAN(object):
 
         # create generator & discriminator & classifier
         self.g_out = network.generator(self.inputs_z, y=self.inputs_y, reuse=False, is_training=True)
-        self.d_real_logits, self.d_real_classifier_input = network.discriminator(self.inputs_x, y=self.inputs_y,
-                                                                                 reuse=False, is_training=True)
-        self.d_fake_logits, self.d_fake_classifier_input = network.discriminator(self.g_out, y=self.inputs_y,
-                                                                                 reuse=True, is_training=True)
-        self.c_real_logits = network.classifier(self.d_real_classifier_input, self.y_dim, reuse=False, is_training=True)
-        self.c_fake_logits = network.classifier(self.d_fake_classifier_input, self.y_dim, reuse=True, is_training=True)
+        self.d_real_logits, self.ac_real_input = network.discriminator(self.inputs_x, y=self.inputs_y,
+                                                                       reuse=False, is_training=True)
+        self.d_fake_logits, self.ac_fake_input = network.discriminator(self.g_out, y=self.inputs_y,
+                                                                       reuse=True, is_training=True)
+        self.ac_real_logits = network.classifier(self.ac_real_input, self.y_dim, reuse=False, is_training=True)
+        self.ac_fake_logits = network.classifier(self.ac_fake_input, self.y_dim, reuse=True, is_training=True)
 
         # compute model loss
-        self.d_loss, self.g_loss, self.q_loss = self.model_loss(self.d_real_logits, self.d_fake_logits,
-                                                                self.inputs_y, self.c_real_logits, self.c_fake_logits)
+        self.d_loss, self.g_loss, self.ac_loss = self.model_loss(self.d_real_logits, self.d_fake_logits,
+                                                                 self.ac_real_logits, self.ac_fake_logits, self.inputs_y)
 
         # model optimizer
-        self.d_opt, self.g_opt, self.q_opt = self.model_opt(self.d_loss, self.g_loss, self.q_loss)
+        self.d_opt, self.g_opt, self.ac_opt = self.model_opt(self.d_loss, self.g_loss, self.ac_loss)
         return
 
     @ staticmethod
-    def model_loss(d_real_logits, d_fake_logits, inputs_y, c_real_logits, c_fake_logits):
+    def model_loss(d_real_logits, d_fake_logits, ac_real_logits, ac_fake_logits, inputs_y):
         # discriminator loss
         d_loss_real = utils.celoss_ones(d_real_logits)
         d_loss_fake = utils.celoss_zeros(d_fake_logits)
@@ -65,28 +65,28 @@ class ACGAN(object):
         # generator loss
         g_loss = utils.celoss_ones(d_fake_logits)
 
-        # classifier loss
-        q_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=c_real_logits, labels=inputs_y))
-        q_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=c_fake_logits, labels=inputs_y))
-        q_loss = q_loss_real + q_loss_fake
+        # auxilary classifier loss
+        ac_loss_real = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=ac_real_logits, labels=inputs_y))
+        ac_loss_fake = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=ac_fake_logits, labels=inputs_y))
+        ac_loss = ac_loss_real + ac_loss_fake
 
-        return d_loss, g_loss, q_loss
+        return d_loss, g_loss, ac_loss
 
-    def model_opt(self, d_loss, g_loss, q_loss):
+    def model_opt(self, d_loss, g_loss, ac_loss):
         # Get weights and bias to update
         t_vars = tf.trainable_variables()
         d_vars = [var for var in t_vars if var.name.startswith('discriminator')]
         g_vars = [var for var in t_vars if var.name.startswith('generator')]
-        q_vars = t_vars
+        ac_vars = t_vars
 
         # Optimize
         beta1 = 0.5
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
             d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(d_loss, var_list=d_vars)
             g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(g_loss, var_list=g_vars)
-            q_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(q_loss, var_list=q_vars)
+            ac_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(ac_loss, var_list=ac_vars)
 
-        return d_train_opt, g_train_opt, q_train_opt
+        return d_train_opt, g_train_opt, ac_train_opt
 
     def train(self):
         n_fixed_samples = self.val_block_size * self.val_block_size
@@ -123,17 +123,19 @@ class ACGAN(object):
                     # Run optimizers
                     _ = sess.run(self.d_opt, feed_dict=fd)
                     _ = sess.run(self.g_opt, feed_dict=fd)
-                    _ = sess.run(self.q_opt, feed_dict=fd)
+                    _ = sess.run(self.ac_opt, feed_dict=fd)
 
                     # print losses
                     if steps % self.print_every == 0:
                         # At the end of each epoch, get the losses and print them out
                         train_loss_d = self.d_loss.eval(fd)
                         train_loss_g = self.g_loss.eval(fd)
+                        train_loss_ac = self.ac_loss.eval(fd)
 
                         print("Epoch {}/{}...".format(e + 1, self.epochs),
                               "Discriminator Loss: {:.4f}...".format(train_loss_d),
-                              "Generator Loss: {:.4f}".format(train_loss_g))
+                              "Generator Loss: {:.4f}...".format(train_loss_g),
+                              "Auxilary Classifier Loss: {:.4f}...".format(train_loss_ac))
                     steps += 1
 
                 # save generation results at every epochs

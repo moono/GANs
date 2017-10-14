@@ -75,7 +75,8 @@ def discriminator(x, y=None, reuse=False, is_training=True):
         l3 = tf.maximum(alpha * l3, l3)
 
         # 4. flatten layer & fully connected layer
-        l4 = tf.reshape(l3, shape=[-1, 4 * 4 * 256])
+        # l4 = tf.reshape(l3, shape=[-1, 4 * 4 * 256])
+        l4 = tf.contrib.layers.flatten(l3)
 
         # final logits
         logits = tf.layers.dense(l4, units=1, kernel_initializer=w_init)
