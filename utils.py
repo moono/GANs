@@ -67,6 +67,7 @@ def save_losses(losses, labels, elapsed_time, fn):
     for col in range(losses.shape[1]):
         plt.plot(losses.T[col], label=labels[col], alpha=0.5)
 
+    plt.legend(loc='upper right', bbox_to_anchor=(0.5, 0.5))
     elapsed_time_fn = 'elapsed: {:.3f}s'.format(elapsed_time)
     plt.text(0.2, 0.9, elapsed_time_fn, ha='center', va='center', transform=ax.transAxes)
     plt.title("Training Losses")
