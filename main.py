@@ -3,12 +3,6 @@ from pprint import pprint
 from importlib import import_module
 
 import utils
-import gan
-import cgan
-import wgan
-import wgan_gp
-import dragan
-import acgan
 
 
 def main():
