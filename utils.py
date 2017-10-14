@@ -1,6 +1,7 @@
 import os
 import tensorflow as tf
 import numpy as np
+import matplotlib.pyplot as plt
 from tensorflow.examples.tutorials.mnist import input_data
 from scipy.misc import toimage
 
@@ -56,3 +57,19 @@ def validation(val_out, val_block_size, image_fn, color_mode):
     if final_image.shape[2] == 1:
         final_image = np.squeeze(final_image, axis=2)
     toimage(final_image, mode=color_mode).save(image_fn)
+
+
+# save losses
+def save_losses(losses, labels, elapsed_time, fn):
+    fig, ax = plt.subplots()
+    losses = np.array(losses)
+
+    for col in range(losses.shape[1]):
+        plt.plot(losses.T[col], label=labels[col], alpha=0.5)
+
+    elapsed_time_fn = 'elapsed: {:.3f}s'.format(elapsed_time)
+    plt.text(0.2, 0.9, elapsed_time_fn, ha='center', va='center', transform=ax.transAxes)
+    plt.title("Training Losses")
+    plt.legend()
+    plt.savefig(fn)
+    plt.close(fig)

@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import tensorflow as tf
+import time
 
 import utils
 import network
@@ -97,6 +98,9 @@ class ACGAN(object):
             fixed_y[s, loc] = 1
 
         steps = 0
+        losses = []
+
+        start_time = time.time()
 
         with tf.Session() as sess:
             # reset tensorflow variables
@@ -136,6 +140,8 @@ class ACGAN(object):
                               "Discriminator Loss: {:.4f}...".format(train_loss_d),
                               "Generator Loss: {:.4f}...".format(train_loss_g),
                               "Auxilary Classifier Loss: {:.4f}...".format(train_loss_ac))
+                        losses.append((train_loss_d, train_loss_g, train_loss_ac))
+
                     steps += 1
 
                 # save generation results at every epochs
@@ -144,4 +150,11 @@ class ACGAN(object):
                                        feed_dict={self.inputs_y: fixed_y, self.inputs_z: fixed_z})
                     image_fn = os.path.join(self.assets_dir, '{:s}-val-e{:03d}.png'.format(self.dataset_type, e+1))
                     utils.validation(val_out, self.val_block_size, image_fn, color_mode='L')
+
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+
+        # save losses as image
+        losses_fn = os.path.join(self.assets_dir, '{:s}-losses.png'.format(self.dataset_type))
+        utils.save_losses(losses, ['Discriminator', 'Generator', 'Auxilary'], elapsed_time, losses_fn)
         return
