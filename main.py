@@ -1,5 +1,6 @@
 import json
 from pprint import pprint
+from importlib import import_module
 
 import utils
 import gan
@@ -26,26 +27,11 @@ def main():
         mnist = utils.get_mnist(dataset_base_dir, mnist_type)
 
         print('Training {:s} with epochs: {:d}, dataset: {:s}'.format(model_name, epochs, mnist_type))
-        net = None
 
-        if model_name == 'gan':
-            net = gan.GAN(model_name, mnist_type, mnist, epochs)
-        elif model_name == 'cgan':
-            net = cgan.CGAN(model_name, mnist_type, mnist, epochs)
-        elif model_name == 'wgan':
-            net = wgan.WGAN(model_name, mnist_type, mnist, epochs)
-        elif model_name == 'wgan-gp':
-            net = wgan_gp.WGANGP(model_name, mnist_type, mnist, epochs)
-        elif model_name == 'dragan':
-            net = dragan.DRAGAN(model_name, mnist_type, mnist, epochs)
-        elif model_name == 'acgan':
-            net = acgan.ACGAN(model_name, mnist_type, mnist, epochs)
-        else:
-            net = None
-
-        if net is None:
-            raise ValueError('Unable to recognize model type of {:s}'.format(model_name))
-
+        # get appropriate module and it's class to start training
+        module_name = import_module(model_name)
+        gan_class = getattr(module_name, model_name.upper())
+        net = gan_class(model_name, mnist_type, mnist, epochs)
         net.train()
 
     return
