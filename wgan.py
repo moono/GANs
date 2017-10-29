@@ -68,10 +68,10 @@ class WGAN(object):
         g_vars = [var for var in t_vars if var.name.startswith('generator')]
 
         # Optimize
-        beta1 = 0.5
+        # beta1 = 0.5
         with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
-            d_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(d_loss, var_list=d_vars)
-            g_train_opt = tf.train.AdamOptimizer(self.learning_rate, beta1=beta1).minimize(g_loss, var_list=g_vars)
+            d_train_opt = tf.train.RMSPropOptimizer(self.learning_rate).minimize(d_loss, var_list=d_vars)
+            g_train_opt = tf.train.RMSPropOptimizer(self.learning_rate).minimize(g_loss, var_list=g_vars)
 
         # weight clipping
         d_weight_clip = [p.assign(tf.clip_by_value(p, -0.01, 0.01)) for p in d_vars]
@@ -83,6 +83,8 @@ class WGAN(object):
         steps = 0
         losses = []
 
+        new_epochs = self.d_train_freq * self.epochs
+
         start_time = time.time()
 
         with tf.Session() as sess:
@@ -90,7 +92,7 @@ class WGAN(object):
             sess.run(tf.global_variables_initializer())
 
             # start training
-            for e in range(self.epochs):
+            for e in range(new_epochs):
                 for ii in range(self.mnist_loader.train.num_examples // self.batch_size):
                     # no need labels
                     batch_x, _ = self.mnist_loader.train.next_batch(self.batch_size)
@@ -108,8 +110,8 @@ class WGAN(object):
                     }
 
                     # Run optimizers (train D more than G)
-                    _ = sess.run(self.d_opt, feed_dict=fd)
                     _ = sess.run(self.d_weight_clip)
+                    _ = sess.run(self.d_opt, feed_dict=fd)
                     if ii % self.d_train_freq == 0:
                         _ = sess.run(self.g_opt, feed_dict=fd)
 
@@ -127,11 +129,12 @@ class WGAN(object):
                     steps += 1
 
                 # save generation results at every epochs
-                if e % self.save_every == 0:
+                if e % (self.d_train_freq * self.save_every) == 0:
                     val_z = np.random.uniform(-1, 1, size=(val_size, self.z_dim))
                     val_out = sess.run(network.generator(self.inputs_z, reuse=True, is_training=False),
                                        feed_dict={self.inputs_z: val_z})
-                    image_fn = os.path.join(self.assets_dir, '{:s}-val-e{:03d}.png'.format(self.dataset_type, e+1))
+                    image_fn = os.path.join(self.assets_dir, '{:s}-val-e{:03d}.png'.
+                                            format(self.dataset_type, (e // self.d_train_freq + 1)))
                     utils.validation(val_out, self.val_block_size, image_fn, color_mode='L')
 
         end_time = time.time()
