@@ -55,7 +55,7 @@ class DRAGAN(object):
     @ staticmethod
     def model_loss(d_real_logits, d_fake_logits, inputs_x, inputs_p, lmbd_gp):
         # compute gradient penalty
-        alpha = tf.random_uniform(shape=[], minval=0., maxval=1.)
+        alpha = tf.random_uniform(shape=[], minval=-1., maxval=1.)
         differences = inputs_p - inputs_x
         interpolated = inputs_x + (alpha * differences)
         d_interpolate_logits, _ = network.discriminator(interpolated, reuse=True, is_training=True)
