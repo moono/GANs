@@ -1,10 +1,13 @@
-# GANs
+# GAN
 * Generative Adversarial Networks
   * GAN
   * CGAN
   * WGAN
   * WGAN-GP
   * DRAGAN
+
+## Reference
+* Based on: https://github.com/hwalsuklee/tensorflow-generative-model-collections
 
 ## MNIST Results
 | Type | Epochs 1 | Epochs 15 | Epochs 30 | Loss |
