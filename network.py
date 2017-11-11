@@ -20,7 +20,7 @@ def generator(z, y=None, reuse=False, is_training=True):
         l1 = tf.reshape(l1, shape=[-1, 3, 3, n_filter])
         l1 = tf.maximum(alpha * l1, l1)
 
-        # 2. layer2 - [batch size, 3, 3, 512] ==> [batch size, 7, 7, 512]
+        # 2. layer2 - [batch size, 3, 3, 512] ==> [batch size, 7, 7, 256]
         l2 = tf.layers.conv2d_transpose(l1, filters=n_filter // 2, kernel_size=3, strides=2, padding='valid',
                                         kernel_initializer=w_init)
         l2 = tf.layers.batch_normalization(l2, training=is_training)
