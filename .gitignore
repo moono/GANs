@@ -112,3 +112,7 @@ checkpoint
 
 # large model file(vgg)
 *.npy
+
+# folders
+assets/
+ckpts/
