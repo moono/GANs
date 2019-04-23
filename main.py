@@ -13,15 +13,15 @@ def main():
 
     for param in gan_params:
         model_name = param["model-name"]
-        epochs = int(param["epochs"])
         mnist_type = param["mnist-type"]
+        gan_loss_type = param["gan_loss_type"]
 
-        print('Training {:s} with epochs: {:d}, dataset: {:s}'.format(model_name, epochs, mnist_type))
+        print('Training {:s} on dataset: {:s}'.format(model_name, mnist_type))
 
         # get appropriate module and it's class to start training
         module_name = import_module(model_name)
         gan_class = getattr(module_name, model_name.upper())
-        net = gan_class(model_name, mnist_type, epochs)
+        net = gan_class(model_name, mnist_type, gan_loss_type)
         net.train()
     return
 

@@ -1,62 +1,83 @@
 [
   {
-    "model-name": "acgan",
-    "mnist-type": "original-MNIST",
-    "epochs": 30
-  },
-  {
-    "model-name": "acgan",
-    "mnist-type": "fashion-MNIST",
-    "epochs": 30
-  },
-  {
-    "model-name": "cgan",
-    "mnist-type": "original-MNIST",
-    "epochs": 30
-  },
-  {
-    "model-name": "cgan",
-    "mnist-type": "fashion-MNIST",
-    "epochs": 30
-  },
-  {
-    "model-name": "dragan",
-    "mnist-type": "original-MNIST",
-    "epochs": 30
-  },
-  {
-    "model-name": "dragan",
-    "mnist-type": "fashion-MNIST",
-    "epochs": 30
+    "model-name": "gan",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v1"
   },
   {
     "model-name": "gan",
-    "mnist-type": "original-MNIST",
-    "epochs": 30
+    "mnist-type": "mnist",
+    "gan_loss_type": "v2"
   },
   {
     "model-name": "gan",
-    "mnist-type": "fashion-MNIST",
-    "epochs": 30
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "gan",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v2"
+  },
+  {
+    "model-name": "cgan",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "cgan",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v2"
+  },
+  {
+    "model-name": "cgan",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "cgan",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v2"
+  },
+
+  {
+    "model-name": "acgan",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "acgan",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v2"
+  },
+  {
+    "model-name": "acgan",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "acgan",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v2"
   },
   {
     "model-name": "wgan",
-    "mnist-type": "original-MNIST",
-    "epochs": 30
+    "mnist-type": "mnist",
+    "gan_loss_type": "v1"
   },
   {
     "model-name": "wgan",
-    "mnist-type": "fashion-MNIST",
-    "epochs": 30
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v1"
   },
   {
     "model-name": "wgangp",
-    "mnist-type": "original-MNIST",
-    "epochs": 30
+    "mnist-type": "mnist",
+    "gan_loss_type": "v1"
   },
   {
     "model-name": "wgangp",
-    "mnist-type": "fashion-MNIST",
-    "epochs": 30
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v1"
   }
 ]
