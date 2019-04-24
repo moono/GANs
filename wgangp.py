@@ -50,12 +50,12 @@ class WGANGP(object):
         self.d_loss, self.g_loss = wgan_loss(self.d_real_logits, self.d_fake_logits)
 
         # add gradient penalty
-        alpha = tf.random_uniform(shape=[self.running_bs, 1, 1, 1], minval=0.0, maxval=1.0)
-        differences = self.fake_images - self.real_images
-        interpolates = self.real_images + (alpha * differences)
-        gradients = tf.gradients(network.discriminator(interpolates, is_training=True, use_bn=False), [interpolates])[0]
-        slopes = tf.sqrt(tf.reduce_sum(tf.square(gradients), reduction_indices=[1]))
-        gradient_penalty = tf.reduce_mean((slopes - 1.) ** 2)
+        alpha = tf.random_uniform(shape=[self.running_bs, 1, 1, 1], minval=-1.0, maxval=1.0)
+        interpolates = self.real_images + alpha * (self.fake_images - self.real_images)
+        d_interpolates_logits, _ = network.discriminator(interpolates, is_training=True, use_bn=False)
+        gradients = tf.gradients(d_interpolates_logits, [interpolates])[0]
+        slopes = tf.sqrt(0.0001 + tf.reduce_sum(tf.square(gradients), reduction_indices=[1, 2, 3]))
+        gradient_penalty = tf.reduce_mean(tf.square(slopes - 1.0))
         self.d_loss += self.lmbd_gp * gradient_penalty
 
         # prepare optimizers
