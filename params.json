@@ -79,5 +79,25 @@
     "model-name": "wgangp",
     "mnist-type": "fashion_mnist",
     "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "gansgp",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "gansgp",
+    "mnist-type": "mnist",
+    "gan_loss_type": "v2"
+  },
+  {
+    "model-name": "gansgp",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v1"
+  },
+  {
+    "model-name": "gansgp",
+    "mnist-type": "fashion_mnist",
+    "gan_loss_type": "v2"
   }
 ]
