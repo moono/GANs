@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 
-def generator(z, y=None, is_training=True, use_bn=True):
+def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
     with tf.variable_scope('generator', reuse=tf.AUTO_REUSE):
         n_filter = 64
         n_kernel = 5
@@ -9,7 +9,16 @@ def generator(z, y=None, is_training=True, use_bn=True):
         # 0. concatenate inputs
         # z: [batch size, 100], y: [batch size, 10]
         if y is not None:
-            inputs = tf.concat([z, y], axis=1)
+            if embed_y:
+                z_dim = z.get_shape().as_list()[-1]
+                y_dim = y.get_shape().as_list()[-1]
+                with tf.variable_scope('embed_y'):
+                    w = tf.get_variable('weight', shape=[y_dim, z_dim], dtype=tf.float32,
+                                        initializer=tf.initializers.random_normal())
+                    y = tf.matmul(y, w)
+                    inputs = tf.concat([z, y], axis=1)
+            else:
+                inputs = tf.concat([z, y], axis=1)
         else:
             inputs = z
 
@@ -39,7 +48,7 @@ def generator(z, y=None, is_training=True, use_bn=True):
         return out
 
 
-def discriminator(x, y=None, is_training=True, use_bn=True):
+def discriminator(x, y=None, y_conditioning=False, is_training=True, use_bn=True):
     with tf.variable_scope('discriminator', reuse=tf.AUTO_REUSE):
         n_filter = 64
         n_kernel = 5
@@ -47,7 +56,7 @@ def discriminator(x, y=None, is_training=True, use_bn=True):
         # 0. concatenate inputs
         # x: [batch size, 28, 28, 1], y: [batch size, 10]
         # make y as same dimension as x first
-        if y is not None:
+        if y is not None and y_conditioning is False:
             y_tiled = tf.expand_dims(y, axis=1)
             y_tiled = tf.expand_dims(y_tiled, axis=1)
             y_tiled = tf.tile(y_tiled, multiples=[1, 28, 28, 1])
@@ -76,6 +85,11 @@ def discriminator(x, y=None, is_training=True, use_bn=True):
 
         # final logits
         logits = tf.layers.dense(l4, units=1)
+
+        if y is not None and y_conditioning is True:
+            with tf.variable_scope('label_conditioning'):
+                logits = logits * y
+                logits = tf.reduce_sum(logits, axis=1, keepdims=True)
 
         return logits, l4
 
