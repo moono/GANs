@@ -18,15 +18,8 @@ def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
         # z: [batch size, 100], y: [batch size, 10]
         if y is not None:
             if embed_y:
-                z_dim = z.get_shape().as_list()[-1]
-                y_dim = y.get_shape().as_list()[-1]
-                embedded_y = embed_label(y, y_dim, z_dim)
+                embedded_y = embed_label(y, y.get_shape().as_list()[-1], z.get_shape().as_list()[-1])
                 inputs = tf.concat([z, embedded_y], axis=1)
-                # with tf.variable_scope('embed_y'):
-                #     w = tf.get_variable('weight', shape=[y_dim, z_dim], dtype=tf.float32,
-                #                         initializer=tf.initializers.random_normal())
-                #     y = tf.matmul(y, w)
-                #     inputs = tf.concat([z, y], axis=1)
             else:
                 inputs = tf.concat([z, y], axis=1)
         else:
@@ -58,8 +51,7 @@ def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
         return out
 
 
-
-def discriminator(x, y=None, y_conditioning=False, is_training=True, use_bn=True):
+def discriminator(x, y=None, embed_y=False, is_training=True, use_bn=True):
     with tf.variable_scope('discriminator', reuse=tf.AUTO_REUSE):
         n_filter = 64
         n_kernel = 5
@@ -67,7 +59,7 @@ def discriminator(x, y=None, y_conditioning=False, is_training=True, use_bn=True
         # 0. concatenate inputs
         # x: [batch size, 28, 28, 1], y: [batch size, 10]
         # make y as same dimension as x first
-        if y is not None and y_conditioning is False:
+        if y is not None and embed_y is False:
             y_tiled = tf.expand_dims(y, axis=1)
             y_tiled = tf.expand_dims(y_tiled, axis=1)
             y_tiled = tf.tile(y_tiled, multiples=[1, 28, 28, 1])
@@ -91,17 +83,21 @@ def discriminator(x, y=None, y_conditioning=False, is_training=True, use_bn=True
             l3 = tf.layers.batch_normalization(l3, training=is_training)
         l3 = tf.nn.leaky_relu(l3)
 
+        if y is not None and embed_y is True:
+            with tf.variable_scope('projection_discriminator'):
+                h = tf.reduce_mean(l3, axis=[1, 2])
+                logits = tf.layers.dense(h, units=1)
 
-        if y is not None and y_conditioning is True:
-            h = tf.reduce_mean(l3, axis=[1, 2])
-            logits = tf.layers.dense(h, units=1)
+                embedded_y = embed_label(y, y.get_shape().as_list()[-1], h.get_shape().as_list()[-1])
+                logits = logits + tf.reduce_sum(embedded_y * h, axis=1, keepdims=True)
+                l4 = h
 
-            embedded_y = embed_label(y, 10, h.get_shape().as_list()[-1])
-            logits += tf.reduce_sum(embedded_y * h, axis=1, keepdims=True)
-            l4 = h
             # with tf.variable_scope('label_conditioning'):
+            #     l4 = tf.layers.flatten(l3)
+            #     logits = tf.layers.dense(l4, units=1)
+            #
             #     conditioned = logits * y
-            #     logits += tf.reduce_sum(conditioned, axis=1, keepdims=True)
+            #     logits = tf.reduce_sum(conditioned, axis=1, keepdims=True)
         else:
             # 4. flatten layer & fully connected layer
             l4 = tf.layers.flatten(l3)
