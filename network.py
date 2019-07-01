@@ -1,6 +1,14 @@
 import tensorflow as tf
 
 
+def embed_label(label, label_dim, channel_dim):
+    with tf.variable_scope('embed_label'):
+        w = tf.get_variable('weight', shape=[label_dim, channel_dim], dtype=tf.float32,
+                            initializer=tf.initializers.random_normal())
+        y = tf.matmul(label, w)
+    return y
+
+
 def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
     with tf.variable_scope('generator', reuse=tf.AUTO_REUSE):
         n_filter = 64
@@ -12,11 +20,13 @@ def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
             if embed_y:
                 z_dim = z.get_shape().as_list()[-1]
                 y_dim = y.get_shape().as_list()[-1]
-                with tf.variable_scope('embed_y'):
-                    w = tf.get_variable('weight', shape=[y_dim, z_dim], dtype=tf.float32,
-                                        initializer=tf.initializers.random_normal())
-                    y = tf.matmul(y, w)
-                    inputs = tf.concat([z, y], axis=1)
+                embedded_y = embed_label(y, y_dim, z_dim)
+                inputs = tf.concat([z, embedded_y], axis=1)
+                # with tf.variable_scope('embed_y'):
+                #     w = tf.get_variable('weight', shape=[y_dim, z_dim], dtype=tf.float32,
+                #                         initializer=tf.initializers.random_normal())
+                #     y = tf.matmul(y, w)
+                #     inputs = tf.concat([z, y], axis=1)
             else:
                 inputs = tf.concat([z, y], axis=1)
         else:
@@ -46,6 +56,7 @@ def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
         l4 = tf.layers.conv2d_transpose(l3, filters=1, kernel_size=n_kernel, strides=2, padding='same')
         out = tf.tanh(l4)
         return out
+
 
 
 def discriminator(x, y=None, y_conditioning=False, is_training=True, use_bn=True):
@@ -80,16 +91,23 @@ def discriminator(x, y=None, y_conditioning=False, is_training=True, use_bn=True
             l3 = tf.layers.batch_normalization(l3, training=is_training)
         l3 = tf.nn.leaky_relu(l3)
 
-        # 4. flatten layer & fully connected layer
-        l4 = tf.layers.flatten(l3)
-
-        # final logits
-        logits = tf.layers.dense(l4, units=1)
 
         if y is not None and y_conditioning is True:
-            with tf.variable_scope('label_conditioning'):
-                logits = logits * y
-                logits = tf.reduce_sum(logits, axis=1, keepdims=True)
+            h = tf.reduce_mean(l3, axis=[1, 2])
+            logits = tf.layers.dense(h, units=1)
+
+            embedded_y = embed_label(y, 10, h.get_shape().as_list()[-1])
+            logits += tf.reduce_sum(embedded_y * h, axis=1, keepdims=True)
+            l4 = h
+            # with tf.variable_scope('label_conditioning'):
+            #     conditioned = logits * y
+            #     logits += tf.reduce_sum(conditioned, axis=1, keepdims=True)
+        else:
+            # 4. flatten layer & fully connected layer
+            l4 = tf.layers.flatten(l3)
+
+            # final logits
+            logits = tf.layers.dense(l4, units=1)
 
         return logits, l4
 
