@@ -85,16 +85,22 @@ def discriminator(x, y=None, embed_y=False, is_training=True, use_bn=True):
 
         if y is not None and embed_y is True:
             with tf.variable_scope('projection_discriminator'):
+                # global average pooling
                 h = tf.reduce_mean(l3, axis=[1, 2])
+
+                # compute logit
                 logits = tf.layers.dense(h, units=1)
 
+                # embed label to last cnn feature size
                 embedded_y = embed_label(y, y.get_shape().as_list()[-1], h.get_shape().as_list()[-1])
+
+                # apply inner product between embedded label & last cnn feature
                 logits = logits + tf.reduce_sum(embedded_y * h, axis=1, keepdims=True)
                 l4 = h
 
             # with tf.variable_scope('label_conditioning'):
             #     l4 = tf.layers.flatten(l3)
-            #     logits = tf.layers.dense(l4, units=1)
+            #     logits = tf.layers.dense(l4, units=y.get_shape().as_list()[-1])
             #
             #     conditioned = logits * y
             #     logits = tf.reduce_sum(conditioned, axis=1, keepdims=True)
