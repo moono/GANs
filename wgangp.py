@@ -104,7 +104,7 @@ class WGANGP(object):
         fake_out = sess.run(network.generator(self.latent_z, is_training=False, use_bn=False), feed_dict=feed_dict)
         image_fn = os.path.join(self.assets_dir,
                                 '{:s}-e{:03d}.png'.format(self.dataset_type, e + 1))
-        utils.validation(fake_out, self.val_block_size, image_fn, color_mode='L')
+        utils.validation(fake_out, self.val_block_size, image_fn)
         return
 
     def train(self):

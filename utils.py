@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.misc import toimage
+from PIL import Image
 
 
 def get_perturbed_batch(minibatch):
@@ -8,7 +8,7 @@ def get_perturbed_batch(minibatch):
 
 
 # gan validation function
-def validation(val_out, val_block_size, image_fn, color_mode):
+def validation(val_out, val_block_size, image_fn):
     preprocesed = ((val_out + 1.0) * 127.5).astype(np.uint8)
     final_image = np.array([])
     single_row = np.array([])
@@ -29,9 +29,12 @@ def validation(val_out, val_block_size, image_fn, color_mode):
             # reset single row
             single_row = np.array([])
 
+    # save image
     if final_image.shape[2] == 1:
         final_image = np.squeeze(final_image, axis=2)
-    toimage(final_image, mode=color_mode).save(image_fn)
+    image = Image.fromarray(final_image)
+    image.save(image_fn)
+    return
 
 
 # save losses
@@ -49,3 +52,4 @@ def save_losses(losses, labels, elapsed_time, fn):
     plt.legend()
     plt.savefig(fn)
     plt.close(fig)
+    return

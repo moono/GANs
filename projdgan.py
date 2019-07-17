@@ -46,10 +46,10 @@ class PROJDGAN(object):
         # create generator & discriminator
         self.fake_images = network.generator(self.latent_z, y=self.inputs_y,
                                              embed_y=True, is_training=True, use_bn=True)
-        self.d_real_logits, _ = network.discriminator(self.real_images, y=self.inputs_y,
-                                                      embed_y=True, is_training=True, use_bn=True)
-        self.d_fake_logits, _ = network.discriminator(self.fake_images, y=self.inputs_y,
-                                                      embed_y=True, is_training=True, use_bn=True)
+        self.d_real_logits = network.projection_discriminator(self.real_images, y=self.inputs_y,
+                                                                 is_training=True, use_bn=True)
+        self.d_fake_logits = network.projection_discriminator(self.fake_images, y=self.inputs_y,
+                                                                 is_training=True, use_bn=True)
 
         # compute model loss
         if gan_loss_type == 'v1':
@@ -116,7 +116,7 @@ class PROJDGAN(object):
                                               embed_y=True, is_training=False, use_bn=True), feed_dict=feed_dict)
         image_fn = os.path.join(self.assets_dir,
                                 '{:s}-{:s}-e{:03d}.png'.format(self.dataset_type, self.gan_loss_type, e + 1))
-        utils.validation(fake_out, self.val_block_size, image_fn, color_mode='L')
+        utils.validation(fake_out, self.val_block_size, image_fn)
         return
 
     def train(self):
