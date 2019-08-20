@@ -37,7 +37,7 @@ def generator(z, y=None, embed_y=False, is_training=True, use_bn=True):
         if use_bn:
             l2 = tf.layers.batch_normalization(l2, training=is_training)
         l2 = tf.nn.leaky_relu(l2)
-        l2 = l2[:, :7, :7, :]   # match shape...
+        l2 = l2[:, :7, :7, :]  # match shape...
 
         # 3. layer3 - [batch size, 7, 7, 128] ==> [batch size, 14, 14, 64]
         l3 = tf.layers.conv2d_transpose(l2, filters=n_filter, kernel_size=n_kernel, strides=2, padding='same')
@@ -137,9 +137,17 @@ def spectral_norm(w, iteration=1):
     return w_norm
 
 
+def sn_dense(x, in_unit, out_unit):
+    with tf.variable_scope('spectral_norm_dense'):
+        w = tf.get_variable('weight', shape=[in_unit, out_unit], dtype=tf.float32)
+        b = tf.get_variable('bias', shape=[out_unit], dtype=tf.float32, initializer=tf.initializers.zeros)
+        w = spectral_norm(w)
+        x = tf.matmul(x, w) + b
+    return x
 
-def projectiond_embedding(label, label_dim, channel_dim):
-    with tf.variable_scope('projectiond_embedding_label'):
+
+def sn_embedding(label, label_dim, channel_dim):
+    with tf.variable_scope('spectral_norm_embedding'):
         w = tf.get_variable('weight', shape=[label_dim, channel_dim], dtype=tf.float32)
         w = spectral_norm(w)
         y = tf.matmul(label, w)
@@ -170,15 +178,15 @@ def projection_discriminator(x, y, is_training=True, use_bn=True):
             l3 = tf.layers.batch_normalization(l3, training=is_training)
         l3 = tf.nn.leaky_relu(l3)
 
-        # l3 = [batch size, 4, 4, 256]
         # phi = [batch size, 256]
         phi = tf.reduce_sum(l3, axis=[1, 2])
 
         # psi = [batch size, 1]
-        psi = tf.layers.dense(phi, units=1)
+        psi = sn_dense(phi, in_unit=n_filter * 4, out_unit=1)
+        # psi = tf.layers.dense(phi, units=1)
 
         # embed label to last cnn feature size: [batch size, 256]
-        embedded_y = projectiond_embedding(y, y.get_shape().as_list()[-1], phi.get_shape().as_list()[-1])
+        embedded_y = sn_embedding(y, y.get_shape().as_list()[-1], phi.get_shape().as_list()[-1])
 
         # logits: [batch size, 1]
         logits = psi + tf.reduce_sum(embedded_y * phi, axis=1, keepdims=True)

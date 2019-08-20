@@ -47,9 +47,9 @@ class PROJDGAN(object):
         self.fake_images = network.generator(self.latent_z, y=self.inputs_y,
                                              embed_y=True, is_training=True, use_bn=True)
         self.d_real_logits = network.projection_discriminator(self.real_images, y=self.inputs_y,
-                                                                 is_training=True, use_bn=True)
+                                                              is_training=True, use_bn=True)
         self.d_fake_logits = network.projection_discriminator(self.fake_images, y=self.inputs_y,
-                                                                 is_training=True, use_bn=True)
+                                                              is_training=True, use_bn=True)
 
         # compute model loss
         if gan_loss_type == 'v1':
